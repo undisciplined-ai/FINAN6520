@@ -1,28 +1,28 @@
-# import YOUR_FILE as H01
+import H01_INTRO as H01
 
 # ######################
 # ##### Question 1 #####
 # ######################
 
-# print(H01.question_1(4,7))
+print(H01.question_1(4,7))
 # ### 28
-# print(H01.question_1(1,2))
+print(H01.question_1(1,2))
 # ### 2
 
 # ######################
 # ##### Question 2 #####
 # ######################
 
-# print(H01.question_2(4))
+print(H01.question_2(4))
 # ### 12
-# print(H01.question_2(7))
+print(H01.question_2(7))
 # ### 15
 
 # ######################
 # ##### Question 3 #####
 # ######################
 
-# print(H01.question_3(2,4,4))
+print(H01.question_3(2,4,4))
 # ### 4.5
-# print(H01.question_3(5,5,2))
+print(H01.question_3(5,5,2))
 # ### 3.0
