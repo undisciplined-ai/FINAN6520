@@ -1,4 +1,4 @@
-# import YOUR_FILE as H02
+import H02_BASICS_HARMER_KAI_U0895215 as H02
 # import H02_BASICS as H02
 
 # ######################
@@ -67,8 +67,8 @@
 # #######################
 # ##### Question 10 #####
 # #######################
-# print(H02.question_10('A STRING WITH SOME K AND D CHARACTERS'))
+print(H02.question_10('A STRING WITH SOME K AND D CHARACTERS'))
 # ### SRETCARAHC D DNA D EMOS HTIW GNIRTS A
 
-# print(H02.question_10('ANOTHER STRING'))
+print(H02.question_10('ANOTHER STRING'))
 # ### GNIRTS REHTONA
