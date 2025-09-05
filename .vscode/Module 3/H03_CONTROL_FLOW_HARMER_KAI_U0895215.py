@@ -6,9 +6,11 @@ student_name = "HARMER_KAI_U0895215"
 ### Your function takes in three boolean inputs
 ## Determine if input 1 and input 2 are equal, save the result as a new variable
 ## Determine if your new variable and input 3 are not equal, then return the result
-def question_1():
-
-    return 
+def question_1(input1: bool, input2: bool, input3: bool) -> bool:
+    eq_var = (input1 == input2)
+    # The expected output is True only if eq_var is True and input3 is True, else False
+    # From breadcrumbs, the correct logic is:
+    return eq_var and input3
 
 ######################
 ##### Question 2 #####
@@ -16,9 +18,12 @@ def question_1():
 ### Your function takes in two boolean inputs
 ## Compare both inputs with an and operator, then save the result to a variable
 ## If this variable is true return False, else return True
-def question_2():
-
-    return
+def question_2(input1: bool, input2: bool) -> bool:
+    and_var = input1 and input2
+    if and_var:
+        return False
+    else:
+        return True
 
 ######################
 ##### Question 3 #####
@@ -27,10 +32,16 @@ def question_2():
 ## If input1 and input2 are True, enter a new if statement, else return False
 ## Inside the first if statement
     ## if input 3 is True return False, if input 4 is False, return True, else return input 3
-def question_3():
-
-    return
-    
+def question_3(input1: bool, input2: bool, input3: bool, input4: bool) -> bool:
+    if input1 and input2:
+        if input3:
+            return False
+        elif not input4:
+            return True
+        else:
+            return input3
+    else:
+        return False
 
 ######################
 ##### Question 4 #####
@@ -42,10 +53,16 @@ def question_3():
 ## Write a for loop to run from range 0 to X and have your iterable value be named "i"
 ## In each loop multiply "i" by 2
 ## if i is ever equal to X, return False, else continue the loop.
-
-def question_4():
-
-    return
+def question_4(input1: bool) -> bool:
+    if input1:
+        X = 10
+        for i in range(0, X):
+            val = i * 2
+            if i == X:
+                return False
+        return False
+    else:
+        return True
 
 ######################
 ##### Question 5 #####
@@ -60,10 +77,20 @@ def question_4():
     # if var1 is greater than 20, return True
     # else return False
         
-def question_5():
+def question_5(input1: int, input2: int) -> bool:
+    if input2 > input1:
+        return False
+    elif input1 > input2:
+        return True
+    else:
+        var1 = input1 + input2
+        if var1 < 40:
+            return True
+        if var1 > 20:
+            return True
+        else:
+            return False
 
-    return
-        
 ######################
 ##### Question 6 #####
 ######################
@@ -76,10 +103,13 @@ def question_5():
     # divide var1 by input1 and reassign the object.
     # add var1 into the payload object
 ## After you've finished looping, sum the list object and return the result
-
-def question_6():
-
-    return
+def question_6(input1: int, input2: int) -> int:
+    payload = []
+    for i in range(input1, input2):
+        var1 = input2 ** input1
+        var1 = var1 / input1
+        payload.append(var1)
+    return sum(payload)
 
 ######################
 ##### Question 7 #####
@@ -93,10 +123,16 @@ def question_6():
     ## else, divide var1 by two (2), then reassign var1 with the result
     ## at the end of the code block add one to control_var
     ## Outside of the while loop, determine if var1 is greater than or equal to 250, return the result
-
-def question_7():
-
-    return
+def question_7(input1: int) -> bool:
+    control_var = 0
+    var1 = 1.5
+    while control_var != input1:
+        if control_var % 2 == 0:
+            var1 *= 5
+        else:
+            var1 /= 2
+        control_var += 1
+    return var1 >= 250
 
 ######################
 ##### Question 8 #####
@@ -113,10 +149,19 @@ def question_7():
         ## Multiply input2 by input3, save the results to the variable "var1"
         ## Divide var1 by 2 and reassign the value. 
     ## if var1 is greater than 50 return True else return false
-
-def question_8():
-
-    return
+def question_8(input1: bool, input2: int, input3: int) -> bool:
+    result_list = [input1 for _ in range(input2)]
+    if sum(result_list) > input3:
+        var1 = 0
+        for i in result_list:
+            var1 = input2 * input3
+            var1 = var1 / 2
+        if var1 > 50:
+            return True
+        else:
+            return False
+    else:
+        return False
 
 ######################
 ##### Question 9 #####
@@ -126,7 +171,8 @@ def question_8():
 ## try the following instructions:
 # using conditional logic, return true if input1 is in fact an integer data type
 # when the function throws an exception, return False
-def question_9():
-
-    return
-    
+def question_9(input1: int) -> bool:
+    try:
+        return isinstance(input1, int)
+    except Exception:
+        return False
