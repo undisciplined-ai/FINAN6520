@@ -1,0 +1,24 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# C extensions
+*.so
+
+# Environments
+.venv/
+venv/
+.env
+
+# Jupyter/IPython
+.ipynb_checkpoints/
+.pytest_cache/
+
+# VS Code caches only (keep project files)
+.vscode/**/*.pyc
+.vscode/**/__pycache__/
+
+# OS files
+.DS_Store
