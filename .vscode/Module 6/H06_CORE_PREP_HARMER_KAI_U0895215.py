@@ -43,7 +43,6 @@ def question_3(input1):
 
 def question_4(list1, list2):
     d = dict(zip(list1, list2))
-    # 4th index means zero-based index 4
     return list(d.items())[4]
 
 ######################
@@ -401,7 +400,6 @@ def question_24(input1):
 
 def question_25(input1):
     df = pd.DataFrame.from_dict(input1)
-    # Using zero-based iloc, and 'up to' meaning exclusive upper bound, match breadcrumbs
     output = df.iloc[1:5, 3:5]
     return output
 
@@ -434,7 +432,6 @@ def question_26(input1):
 def question_27(input1):
     variable1 = input1.iloc[2:8]
     output1 = float(variable1.mean())
-    # Use numpy argmax to find position of max within the slice
     output2 = int(np.argmax(variable1.to_numpy()))
     return (output1, output2)
 
@@ -472,18 +469,14 @@ def question_28(list1, list2):
 ## Return the output dataframe
 
 def question_29(ticker, start_date, end_date):
-    # Request data with stable structure (no auto adjustment)
     output = yf.download(ticker, start=start_date, end=end_date, auto_adjust=False, progress=False)
-    # Flatten to single-level columns if MultiIndex is returned using basic Python only
     if isinstance(output.columns, pd.MultiIndex):
         new_cols = [col[0] if isinstance(col, tuple) else col for col in output.columns]
         output.columns = pd.Index(new_cols)
-    # Reorder columns to match breadcrumbs exactly if all present
     desired = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
     cols_present = [c for c in desired if c in output.columns]
     if len(cols_present) == len(desired):
         output = output[desired]
-    # Ensure the index is a DatetimeIndex
     if not isinstance(output.index, pd.DatetimeIndex):
         if 'Date' in output.columns:
             output['Date'] = pd.to_datetime(output['Date'])
