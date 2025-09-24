@@ -8,6 +8,23 @@ This repository contains weekly modules (1–12). Each module includes:
 
 We follow a consistent, repeatable process every week.
 
+## Course-wide assignment rules (apply every week)
+
+- Scope: Use only concepts and libraries introduced up to and including the current week N. Do not use later-week features or undocumented APIs.
+- Structure matters: Match expected types, shapes, names, and order exactly (e.g., tuple vs list, column names/order, index type). Do not rename/reorder unless the prompt specifies it.
+- Indexing semantics: “Index location” means 0-based positional indexing; slices are half-open (e.g., `iloc[2:8]` → positions 2..7). When asked for a position within a slice, return the slice-relative position.
+- Library usage: Prefer core Python first; use NumPy/Pandas only to the extent covered. Avoid advanced or convenience methods not covered unless explicitly taught.
+- External data: When external data is required, ensure outputs have deterministic schema matching the prompt/breadcrumbs (column names, order, index type). Normalize only with techniques covered by week N. If data is unavailable, use provided stubs/mocks.
+- Mutations: Only mutate inputs in place when the prompt explicitly asks for it.
+
+### Submission checklist
+
+- Uses only covered concepts (week ≤ N).
+- Output structure matches exactly (types, names, order, index).
+- Positional indexing semantics followed where requested.
+- No unnecessary formatting/renaming or advanced methods.
+- External-data outputs normalized minimally within covered tools.
+
 ## Weekly Process (Modules 5–12)
 
 1) Verify module layout
