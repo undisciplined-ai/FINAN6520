@@ -2,6 +2,7 @@
 student_name = "HARMER_KAI_U0895215"
 
 import pandas as pd
+import numpy as np
 import yfinance as yf
 
 ######################
@@ -430,10 +431,11 @@ def question_26(input1):
 ## Find the index location of the max value in the series, then save the value to "output2"
 ## Return output1 and output2 as a tuple
 
-def question_27(input1: pd.Series):
+def question_27(input1):
     variable1 = input1.iloc[2:8]
     output1 = float(variable1.mean())
-    output2 = variable1.reset_index(drop=True).idxmax()
+    # Use numpy argmax to find position of max within the slice
+    output2 = int(np.argmax(variable1.to_numpy()))
     return (output1, output2)
 
 #######################
@@ -472,12 +474,10 @@ def question_28(list1, list2):
 def question_29(ticker, start_date, end_date):
     # Request data with stable structure (no auto adjustment)
     output = yf.download(ticker, start=start_date, end=end_date, auto_adjust=False, progress=False)
-    # Flatten to single-level columns if MultiIndex is returned
+    # Flatten to single-level columns if MultiIndex is returned using basic Python only
     if isinstance(output.columns, pd.MultiIndex):
-        # Prefer the price level only, drop the ticker level
-        output.columns = output.columns.droplevel(-1)
-    # Ensure no column Index name (match breadcrumbs formatting)
-    output.columns.name = None
+        new_cols = [col[0] if isinstance(col, tuple) else col for col in output.columns]
+        output.columns = pd.Index(new_cols)
     # Reorder columns to match breadcrumbs exactly if all present
     desired = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
     cols_present = [c for c in desired if c in output.columns]
@@ -507,8 +507,8 @@ def question_29(ticker, start_date, end_date):
 def question_30(ticker, start_date, end_date):
     output = yf.download(ticker, start=start_date, end=end_date, auto_adjust=False, progress=False)
     if isinstance(output.columns, pd.MultiIndex):
-        output.columns = output.columns.droplevel(-1)
-    output.columns.name = None
+        new_cols = [col[0] if isinstance(col, tuple) else col for col in output.columns]
+        output.columns = pd.Index(new_cols)
     desired = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
     cols_present = [c for c in desired if c in output.columns]
     if len(cols_present) == len(desired):
