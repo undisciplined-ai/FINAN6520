@@ -24,8 +24,9 @@ We follow a consistent, repeatable process every week.
 - Positional indexing semantics followed where requested.
 - No unnecessary formatting/renaming or advanced methods.
 - External-data outputs normalized minimally within covered tools.
+- Do not add any hints or notes to the code without explicit user permission!
 
-## Weekly Process (Modules 5–12)
+## Weekly Process (Modules 1–12)
 
 1) Verify module layout
 - Ensure the week’s files exist under `.vscode/Module X/` with the naming conventions above.
@@ -78,6 +79,7 @@ We follow a consistent, repeatable process every week.
 - Keep function names/signatures consistent with breadcrumbs.
 - Use only concepts covered so far when completing homework.
 - Prefer small, targeted changes; avoid refactors unrelated to the weekly task.
+- Code comments: Do not add commentary beyond what the template/instructions provide. Only include additional comments when explicitly requested. Extra lines beginning with `#` are highly discouraged and may cause checker failures.
 
 ## Notes for Future Weeks
 
