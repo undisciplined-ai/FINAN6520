@@ -1,5 +1,5 @@
 
-student_name = "SOLUTIONS"
+student_name = "HARMER_KAI_U0895215"
 
 import pandas as pd
 import numpy as np
@@ -300,10 +300,10 @@ def question_14(input_one, input_two):
 
     for index in range(len(output)):
         output[index] = output[index] / 4
-
-    output = output * counter
-
-    return output
+    final_output = []
+    for _ in range(counter):
+        final_output.extend(output)
+    return final_output
 
 #######################
 ##### Question 15 #####
@@ -368,27 +368,22 @@ def question_16(input_one):
 ## Return the output dataframe. 
 
 def question_17(ticker, beginning_date, ending_date):
-
-    output = yf.download(ticker, start=beginning_date, end=ending_date, auto_adjust=True, progress=False)
-
+    output = yf.download(ticker, start=beginning_date, end=ending_date, progress=False)
     if output.empty:
         return output
-
     output.index = pd.to_datetime(output.index)
-    output.index.name = None
-
-    if isinstance(ticker, str):
-        output = output[['Close']].copy()
-        output.columns = [ticker]
+    if isinstance(ticker, list):
+        try:
+            output = output['Adj Close']
+        except Exception:
+            output = output['Close']
     else:
-        if isinstance(output.columns, pd.MultiIndex):
-            output = output['Close'].copy()
+        if 'Adj Close' in output.columns:
+            output = output[['Adj Close']]
         else:
-            output = output[['Close']].copy()
-
-    output.columns.name = 'Ticker'
+            output = output[['Close']]
+        output.columns = [ticker]
     output = output.tail(200)
-
     return output
 
 #######################
@@ -400,13 +395,8 @@ def question_17(ticker, beginning_date, ending_date):
 ## return max_value and max_index as a tuple
 
 def question_18(input_one):
-
-    max_value = input_one.max()
-    if hasattr(max_value, 'item'):
-        max_value = max_value.item()
-    values_list = input_one.tolist()
-    max_index = values_list.index(max_value)
-
+    max_value = int(input_one.max())
+    max_index = int(np.argmax(input_one.to_numpy()))
     return (max_value, max_index)
 
 #######################
