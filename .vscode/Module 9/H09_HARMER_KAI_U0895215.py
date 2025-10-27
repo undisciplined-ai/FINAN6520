@@ -16,7 +16,7 @@ student_name = "HARMER_KAI_U0895215"
 
 class Vehicle:
     ### Remove the "pass" when finished. 
-    pass
+
     ##########################
     ####### Question 1 #######
     ##########################
