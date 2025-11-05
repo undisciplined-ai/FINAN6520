@@ -30,7 +30,7 @@ ax5.yaxis.set_major_formatter('{x:,.1f}')
 #################### HOMEWORK ####################
 ##################################################
 
-from H10_PROPERTY_MODELING_SOLUTIONS import Portfolio
+from H10_HARMER_KAI_U0895215 import Portfolio
 
 portfolio_inputs = [{'PROPERTY_VALUE':10000000,
                      'REGULAR_UNITS':5,
