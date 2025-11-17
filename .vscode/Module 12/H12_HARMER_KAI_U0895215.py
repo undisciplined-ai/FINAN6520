@@ -25,8 +25,8 @@ class Simulation:
     ### Instruction ###
     ## You have a single input, which is a bank class. 
     ## Assign the input to a class attribute called "bank".
-    def __init__():
-        pass
+    def __init__(self, bank):
+        self.bank = bank
         
     ######################
     ##### Question 2 #####     
@@ -46,8 +46,10 @@ class Simulation:
     ## Inside your loop:
         ## Use the "open_branch" generator method from the Bank class to open a new branch. 
     ## Your method does not have a return statement. 
-    def open_branches():
-        pass
+    def open_branches(self, branch_count: int):
+        self.branch_count = branch_count
+        for _ in range(branch_count):
+            self.bank.open_branch()
 
     ######################
     ##### Question 3 #####     
@@ -74,8 +76,14 @@ class Simulation:
                 ## Using Numpy generate a random integer value from 1,000 to 100,000 and assign to account_deposit. 
             ## Pass account_deposit into the "create_account" method from the branch class to create the account. 
     ## Your method does not have a return statement.  
-    def open_accounts():
-        pass
+    def open_accounts(self, account_count: int):
+        self.account_count = account_count
+        for branch_id in range(1, self.branch_count + 1):
+            branch = self.bank.branch_database[branch_id]
+            for _ in range(account_count):
+                np.random.seed(47)
+                account_deposit = np.random.randint(1000, 100001)
+                branch.create_account(account_deposit)
 
     ######################
     ##### Question 4 #####     
@@ -103,8 +111,17 @@ class Simulation:
                     ## Both methods require the account id to be passed in before dollar_value. 
 
     ## Your method does not have a return statement. 
-    def transactions():
-        pass
+    def transactions(self, transaction_count: int):
+        for branch_id in range(1, self.branch_count + 1):
+            branch = self.bank.branch_database[branch_id]
+            for account_id in range(1, self.account_count + 1):
+                for i in range(transaction_count):
+                    np.random.seed(47)
+                    dollar_value = np.random.randint(1000, 10001)
+                    if i % 2 == 0:
+                        branch.withdraw(account_id, dollar_value)
+                    else:
+                        branch.deposit(account_id, dollar_value)
 
 
     ######################
@@ -138,8 +155,17 @@ class Simulation:
                 ## Pay off the loan balance using the branch class method payoff_account_loan       
                             
     ## Your method does not have a return statement. 
-    def loans():
-        pass
+    def loans(self, loan_count: int):
+        for branch_id in range(1, self.branch_count + 1):
+            branch = self.bank.branch_database[branch_id]
+            for account_id in range(1, self.account_count + 1):
+                for _ in range(loan_count):
+                    np.random.seed(47)
+                    term = np.random.choice([24, 36, 48, 60, 72])
+                    urban_rural = np.random.choice([0, 1, 2])
+                    loan_principal = np.random.randint(10000, 100001)
+                    branch.consumer_credit_model(account_id, term, urban_rural, loan_principal)
+                    branch.payoff_account_loan(account_id)
 
     ######################
     ##### Question 6 #####     
@@ -160,5 +186,10 @@ class Simulation:
     ## Utilize the "balance_sheet_aggregation" method of the bank object to aggregate all the previous activity. 
     ## Return the statement "Simulation Complete."
     
-    def run_simulation():
-        pass
+    def run_simulation(self, branches: int, accounts: int, transactions: int, loans: int):
+        self.open_branches(branches)
+        self.open_accounts(accounts)
+        self.transactions(transactions)
+        self.loans(loans)
+        self.bank.balance_sheet_aggregation()
+        return "Simulation Complete."

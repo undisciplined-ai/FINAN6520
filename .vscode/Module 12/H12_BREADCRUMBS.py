@@ -1,4 +1,5 @@
-from BANKING_FULL_CODE import Bank,Simulation
+from BANKING_FULL_CODE import Bank
+from H12_HARMER_KAI_U0895215 import Simulation
 
 
 ##################################################
