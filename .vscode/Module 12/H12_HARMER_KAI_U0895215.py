@@ -1,7 +1,7 @@
 
 import numpy as np
 
-student_name = "LAST_FIRST_UNID"
+student_name = "HARMER_KAI_U0895215"
 
 ####################################
 ######### SIMULATION CLASS #########

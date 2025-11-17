@@ -1,6 +1,6 @@
 import datetime as dt 
 
-student_name = "SOLUTIONS"
+student_name = "HARMER_KAI_U0895215"
 
 ######################
 ##### Question 1 #####
@@ -14,8 +14,9 @@ student_name = "SOLUTIONS"
 ## Passing in 1 and bool will result in False
 ## Passing in [1,2] and int will result in False
 
-def question_1():
-    pass
+def question_1(input1, input2):
+    output = isinstance(input1, input2)
+    return output
 
 ######################
 ##### Question 2 #####
@@ -34,8 +35,12 @@ def question_1():
 ## Passing in "R" and 4 will result in:
 # {'R0': 0, 'R1': 1, 'R2': 2, 'R3': 3}
 
-def question_2():
-    pass   
+def question_2(input1: str, input2: int):
+    output = {}
+    for i in range(input2):
+        new_key = input1 + str(i)
+        output[new_key] = i
+    return output
 
 # print(question_2_solution('R',4))
 
@@ -61,9 +66,12 @@ def question_2():
     ## Be sure to understand how the object is working. 
 ## Passing in 2021,2025,2023,5,5 Results in False
 
-def question_3():
-    pass
-        
+def question_3(input1: int, input2: int, input3: int, input4: int, input5: int):
+    date1 = dt.date(input1, input4, input5)
+    date2 = dt.date(input2, input4, input5)
+    date3 = dt.date(input3, input4, input5)
+    return date1 <= date2 <= date3
+
 # print(question_3_solution(2021,2022,2023,5,5))
 # print(question_3_solution(2021,2025,2023,5,5))
 
@@ -92,8 +100,11 @@ def question_3():
     ## If the output is not printed, then it will look like:
     # 'one -- 1\ntwo -- 2\n'
 
-def question_4():
-    pass
+def question_4(input1: dict):
+    output = ""
+    for key, value in input1.items():
+        output += f"{key} -- {value}\n"
+    return output
 
 # print(question_4_solution({'one':1, 'two': 2}))
 
@@ -122,8 +133,13 @@ def question_4():
 ## Results in:
 ## {'KEY1': {'TARGET': 4, 'NEW_KEY': 20}, 'KEY2': {'TARGET': 6, 'NEW_KEY': 30}}
 
-def question_5():
-    pass
+def question_5(input1: dict):
+    for key in input1.keys():
+        inner_dict = input1[key]
+        inner_value = inner_dict['TARGET']
+        inner_dict['NEW_KEY'] = inner_value * 5
+    return input1
+
 
 ######################
 ##### Question 6 #####
@@ -138,8 +154,10 @@ def question_5():
 ## Passing in 4 results in (False, 1600)
 ## Passing in 36 results in (True, 14400)
 
-def question_6():
-    pass
+def question_6(input1: int):
+    output = input1 >= 25
+    input1 *= 400
+    return output, input1
 
 ######################
 ##### Question 7 #####
@@ -160,5 +178,10 @@ def question_6():
 ## Passing in 4 will result in '8EXECUTED'
 ## Passing in 3 will result in '6EXECUTED'
 
-def question_7():
-    pass
+def question_7(input1: int):
+    output = ""
+    for i in range(input1):
+        output = str(input1 * 2)
+    else:
+        output += "EXECUTED"
+    return output
