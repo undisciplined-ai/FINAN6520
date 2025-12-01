@@ -1,0 +1,142 @@
+You are extracting structured concepts from text.
+
+NODE TYPES TO EXTRACT:
+{node_types}
+
+INSTRUCTIONS:
+- Identify concepts matching the defined node types
+- Rate importance from 0.0 (trivial) to 1.0 (foundational)
+- Extract only clear, distinct concepts (be conservative)
+- Write PRESCRIPTIVE statements (how the persona should act), not descriptions
+- behavioral_directive fields must be actionable templates the persona can follow
+- Include all type-specific fields from schema
+- Return ONLY valid JSON (no markdown, no code blocks, no explanatory text)
+
+SOURCE CONTEXT:
+- Document: {doc_id}
+- Page: {page_id}
+- Chunk: {chunk_id}
+
+TEXT TO ANALYZE:
+{chunk_text}
+
+REQUIRED OUTPUT FORMAT:
+Return a single JSON object with a "nodes" array. Each node must match one of these exact schemas:
+
+Persona node:
+{{
+  "type": "Persona",
+  "label": "Brief identity label",
+  "description": "One-sentence persona summary",
+  "tags": ["tag1"],
+  "importance": 0.85,
+  "fields": {{
+    "identity_statement": "I am [prescriptive self-description]",
+    "worldview": "Core philosophy about how the world works",
+    "core_values": ["value_label1", "value_label2"],
+    "communication_style": "socratic",
+    "baseline_tone": "Calm and curious"
+  }}
+}}
+
+Constraint node:
+{{
+  "type": "Constraint",
+  "label": "Boundary name",
+  "description": "What this constrains",
+  "tags": ["operational"],
+  "importance": 0.70,
+  "fields": {{
+    "role": "Function in system (e.g., mentor, analyst)",
+    "capability_limits": ["Cannot do X", "Cannot access Y"],
+    "environment_context": "Operating conditions",
+    "response_bounds": "Behavioral guardrails"
+  }}
+}}
+
+Value node:
+{{
+  "type": "Value",
+  "label": "Value name",
+  "description": "What this value means",
+  "tags": ["category"],
+  "importance": 0.75,
+  "fields": {{
+    "principle": "Core belief statement",
+    "behavioral_directive": "When [context], do [action]",
+    "application_context": "When to prioritize this value",
+    "strength": 0.80,
+    "polarity": "positive"
+  }}
+}}
+
+Drive node:
+{{
+  "type": "Drive",
+  "label": "Goal name",
+  "description": "What they're pursuing",
+  "tags": ["motivation"],
+  "importance": 0.80,
+  "fields": {{
+    "goal_description": "What they're trying to achieve",
+    "goal_type": "internal",
+    "motivation": "Why this matters emotionally",
+    "active_conflict": "Current obstacle or tension",
+    "stakes": "What's at risk if this fails",
+    "priority": 0.75
+  }}
+}}
+
+ReasoningPattern node:
+{{
+  "type": "ReasoningPattern",
+  "label": "Pattern name",
+  "description": "How this reasoning works",
+  "tags": ["logic"],
+  "importance": 0.70,
+  "fields": {{
+    "trigger": "When [situation] occurs",
+    "preferred_response": "Then [action template]",
+    "failure_mode": "Misapplied when...",
+    "confidence_level": 0.75
+  }}
+}}
+
+LinguisticStyle node:
+{{
+  "type": "LinguisticStyle",
+  "label": "Style name",
+  "description": "Communication characteristics",
+  "tags": ["tone"],
+  "importance": 0.65,
+  "fields": {{
+    "formality": "professional",
+    "complexity": "moderate",
+    "directness": "direct",
+    "verbosity": "balanced",
+    "example_phrases": ["Let's explore...", "I'm curious about..."],
+    "affect_modulation": "Warmer when encouraging; neutral when correcting"
+  }}
+}}
+
+Your complete response (example):
+{{
+  "nodes": [
+    {{
+      "type": "Persona",
+      "label": "Growth-Oriented Learner",
+      "description": "Values iterative improvement through failure",
+      "tags": ["learning"],
+      "importance": 0.85,
+      "fields": {{
+        "identity_statement": "I am an educator who believes challenges reveal capability",
+        "worldview": "Progress comes from iterative failure, not perfection",
+        "core_values": ["Embrace Failure", "Curiosity"],
+        "communication_style": "socratic",
+        "baseline_tone": "Calm and encouraging"
+      }}
+    }}
+  ]
+}}
+
+Note: IDs will be auto-generated as {doc_id}-{page_id}-{chunk_id}-{type_code}-{seq}

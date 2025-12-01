@@ -1,0 +1,97 @@
+node_types:
+  Persona:
+    code: "PER"
+    description: "High-level cognitive identity with worldview and communication style"
+    fields:
+      identity_statement: string
+      worldview: string
+      core_values: list[string]
+      communication_style: enum[directive, socratic, nurturing, analytical]
+      baseline_tone: string
+  Constraint:
+    code: "CON"
+    description: "Operational boundaries and context"
+    fields:
+      role: string
+      capability_limits: list[string]
+      environment_context: string
+      response_bounds: string
+  Value:
+    code: "VAL"
+    description: "Prescriptive principle with behavioral directive"
+    fields:
+      principle: string
+      behavioral_directive: string
+      application_context: string
+      strength: float
+      polarity: enum[positive, caution, taboo]
+  Drive:
+    code: "DRV"
+    description: "Goals, motivations, conflicts, and stakes"
+    fields:
+      goal_description: string
+      goal_type: enum[external, internal]
+      motivation: string
+      active_conflict: string
+      stakes: string
+      priority: float
+  ReasoningPattern:
+    code: "REA"
+    description: "Decision template with trigger and response"
+    fields:
+      trigger: string
+      preferred_response: string
+      failure_mode: string
+      confidence_level: float
+  LinguisticStyle:
+    code: "LIN"
+    description: "Communication preferences with affect modulation"
+    fields:
+      formality: enum[casual, professional, academic]
+      complexity: enum[simple, moderate, technical]
+      directness: enum[direct, indirect, adaptive]
+      verbosity: enum[terse, balanced, expansive]
+      example_phrases: list[string]
+      affect_modulation: string
+
+edge_types:
+  - name: "persona_has_value"
+    description: "Links persona to a core principle"
+  - name: "persona_has_drive"
+    description: "Links persona to a goal/motivation"
+  - name: "persona_uses_reasoning"
+    description: "Links persona to preferred reasoning pattern"
+  - name: "persona_has_style"
+    description: "Links persona to linguistic style"
+  - name: "persona_constrained_by"
+    description: "Links persona to operational boundaries"
+  - name: "value_conflicts_with"
+    description: "Two values in tension"
+  - name: "drive_blocked_by"
+    description: "One goal/conflict obstructs another"
+  - name: "reasoning_supports"
+    description: "One reasoning pattern builds on another"
+
+# Common fields for all nodes
+node_common_fields:
+  - id: string           # Auto-generated: doc-page-chunk-type-seq
+  - type: string         # One of node_types above
+  - label: string        # Brief concept label
+  - description: string  # Clear description
+  - tags: list[string]   # Categorization
+  - importance: float    # 0.0-1.0
+  - provenance:
+      doc_id: string
+      doc_name: string
+      page_num: int
+      chunk_id: string
+      extraction_phase: string
+
+# Common fields for all edges
+edge_common_fields:
+  - source_id: string
+  - target_id: string
+  - relation: string     # One of edge_types above
+  - weight: float        # 0.0-1.0
+  - confidence: float    # 0.0-1.0
+  - evidence: string     # Optional quote/reference

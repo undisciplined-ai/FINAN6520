@@ -1,0 +1,40 @@
+# PDF Processing
+pdf_extractor: "pdfplumber"
+chunk_size: 1400         # tokens (not words)
+chunk_overlap: 200       # tokens
+tokenizer: "cl100k_base" # OpenAI tokenizer for token counting
+
+# API Configuration
+api_key_env: "AI_GATEWAY_API_KEY"  # Vercel AI Gateway API key
+api_provider: "vercel"             # Use Vercel AI SDK
+
+# Phase 1: Node Extraction
+phase1:
+  model: "openai/gpt-4o-mini"  # Vercel AI SDK format: provider/model
+  temperature: 0.1
+  max_tokens: 2000
+  prompt_template: "prompts/phase1_extraction.txt"
+
+# Phase 2: Relationship Extraction
+phase2:
+  model: "openai/gpt-4o-mini"
+  temperature: 0.1
+  max_tokens: 1500
+  importance_threshold: 0.5  # Only process nodes above this
+  prompt_template: "prompts/phase2_relationships.txt"
+
+# Phase 3: Persona Sheet
+phase3:
+  max_values: 5
+  max_reasoning: 3
+  max_styles: 2
+
+# Logging
+logging:
+  level: "INFO"        # INFO for normal runs, DEBUG for troubleshooting
+  destination: "stdout" # or "outputs/run.log" using logging.FileHandler
+
+# Token Reporting
+token_reporting:
+  enabled: true
+  warn_at_tokens: 120000  # matches token_budget warn threshold

@@ -1,0 +1,8 @@
+{"source_id": "doc001-p001-c01-PER-01", "target_id": "doc001-p001-c01-VAL-01", "relation": "persona_has_value", "weight": 0.85, "confidence": 0.90, "evidence": "Explicitly states failure as learning mechanism"}
+{"source_id": "doc001-p001-c01-PER-01", "target_id": "doc001-p001-c01-VAL-02", "relation": "persona_has_value", "weight": 0.70, "confidence": 0.82, "evidence": "Describes need to protect emotional boundaries"}
+{"source_id": "doc001-p001-c01-PER-01", "target_id": "doc001-p001-c01-DRV-01", "relation": "persona_has_drive", "weight": 0.80, "confidence": 0.85, "evidence": "Motivated by preventing student discouragement"}
+{"source_id": "doc001-p001-c01-PER-01", "target_id": "doc001-p001-c01-DRV-02", "relation": "persona_has_drive", "weight": 0.65, "confidence": 0.78, "evidence": "States desire to scale successful experiments"}
+{"source_id": "doc001-p001-c01-PER-01", "target_id": "doc001-p001-c01-REA-01", "relation": "persona_uses_reasoning", "weight": 0.75, "confidence": 0.80, "evidence": "Prefers iterative validation"}
+{"source_id": "doc001-p001-c01-PER-01", "target_id": "doc001-p001-c01-REA-02", "relation": "persona_uses_reasoning", "weight": 0.68, "confidence": 0.77, "evidence": "Describes feedback pattern using evidence framing"}
+{"source_id": "doc001-p001-c01-PER-01", "target_id": "doc001-p001-c01-LIN-01", "relation": "persona_has_style", "weight": 0.70, "confidence": 0.85, "evidence": "Uses Socratic method consistently"}
+{"source_id": "doc001-p001-c01-PER-01", "target_id": "doc001-p001-c01-CON-01", "relation": "persona_constrained_by", "weight": 0.65, "confidence": 0.80, "evidence": "Limited to peer mentoring role"}

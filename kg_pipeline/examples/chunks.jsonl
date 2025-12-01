@@ -1,0 +1,3 @@
+{"doc_id": "doc001", "page_id": "p001", "chunk_id": "c01", "text": "Sample text showing cognitive pattern...", "doc_name": "example.pdf", "page_num": 1}
+{"doc_id": "doc001", "page_id": "p001", "chunk_id": "c02", "text": "Second chunk with overlap from previous...", "doc_name": "example.pdf", "page_num": 1}
+{"doc_id": "doc001", "page_id": "p002", "chunk_id": "c01", "text": "First chunk from page 2...", "doc_name": "example.pdf", "page_num": 2}

@@ -1,0 +1,72 @@
+You are identifying relationships between concepts.
+
+RELATIONSHIP TYPES:
+{edge_types}
+
+NODES FROM THIS CHUNK:
+{nodes}
+
+INSTRUCTIONS:
+- Identify relationships between listed nodes only
+- Use only the defined relationship types
+- Rate confidence from 0.0 (uncertain) to 1.0 (explicit)
+- Rate weight from 0.0 (weak) to 1.0 (strong)
+- Provide brief evidence from text
+- Return ONLY valid JSON (no markdown, no code blocks, no explanatory text)
+
+AVAILABLE EDGE TYPES:
+- persona_has_value: Persona → Value
+- persona_has_drive: Persona → Drive
+- persona_uses_reasoning: Persona → ReasoningPattern
+- persona_has_style: Persona → LinguisticStyle
+- persona_constrained_by: Persona → Constraint
+- value_conflicts_with: Value ↔ Value
+- drive_blocked_by: Drive → Drive
+- reasoning_supports: ReasoningPattern → ReasoningPattern
+
+TEXT FOR CONTEXT:
+{chunk_text}
+
+REQUIRED OUTPUT FORMAT:
+Return a single JSON object with an "edges" array. Each edge must have this exact structure:
+
+{{
+  "source_id": "doc001-p001-c01-PER-01",
+  "target_id": "doc001-p001-c01-VAL-01",
+  "relation": "persona_has_value",
+  "weight": 0.80,
+  "confidence": 0.90,
+  "evidence": "Direct quote or paraphrase from text"
+}}
+
+Example complete response:
+{{
+  "edges": [
+    {{
+      "source_id": "doc001-p001-c01-PER-01",
+      "target_id": "doc001-p001-c01-VAL-01",
+      "relation": "persona_has_value",
+      "weight": 0.85,
+      "confidence": 0.90,
+      "evidence": "Explicitly states failure as learning mechanism"
+    }},
+    {{
+      "source_id": "doc001-p001-c01-PER-01",
+      "target_id": "doc001-p001-c01-DRV-01",
+      "relation": "persona_has_drive",
+      "weight": 0.80,
+      "confidence": 0.85,
+      "evidence": "Motivated by preventing student discouragement"
+    }},
+    {{
+      "source_id": "doc001-p001-c01-PER-01",
+      "target_id": "doc001-p001-c01-CON-01",
+      "relation": "persona_constrained_by",
+      "weight": 0.70,
+      "confidence": 0.80,
+      "evidence": "Limited to peer mentoring role"
+    }}
+  ]
+}}
+
+IMPORTANT: Use exact node IDs from the NODES list above.
