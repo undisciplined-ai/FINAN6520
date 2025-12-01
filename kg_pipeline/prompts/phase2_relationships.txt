@@ -1,72 +1,57 @@
-You are identifying relationships between concepts.
+You are identifying relationships between concepts extracted from text.
 
-RELATIONSHIP TYPES:
-{edge_types}
-
-NODES FROM THIS CHUNK:
+AVAILABLE CONCEPTS:
 {nodes}
 
+VALID RELATIONSHIP TYPES:
+1. persona_has_value: Persona → Value (core principle)
+2. persona_has_drive: Persona → Drive (goal/motivation)
+3. persona_uses_reasoning: Persona → ReasoningPattern (decision approach)
+4. persona_has_style: Persona → LinguisticStyle (communication)
+5. persona_constrained_by: Persona → Constraint (boundary)
+6. value_conflicts_with: Value ↔ Value (tension)
+7. drive_blocked_by: Drive → Drive (obstruction)
+8. reasoning_supports: ReasoningPattern → ReasoningPattern (builds on)
+
 INSTRUCTIONS:
-- Identify relationships between listed nodes only
-- Use only the defined relationship types
-- Rate confidence from 0.0 (uncertain) to 1.0 (explicit)
-- Rate weight from 0.0 (weak) to 1.0 (strong)
-- Provide brief evidence from text
+- Identify relationships between the listed concepts
+- Choose the appropriate relationship type from the list above
+- ONLY suggest relationships where source/target types match the allowed pattern
+- Rate confidence from 0.0 (uncertain) to 1.0 (explicit in text)
+- Rate weight from 0.0 (weak) to 1.0 (foundational)
+- Provide direct evidence quote from text
 - Return ONLY valid JSON (no markdown, no code blocks, no explanatory text)
 
-AVAILABLE EDGE TYPES:
-- persona_has_value: Persona → Value
-- persona_has_drive: Persona → Drive
-- persona_uses_reasoning: Persona → ReasoningPattern
-- persona_has_style: Persona → LinguisticStyle
-- persona_constrained_by: Persona → Constraint
-- value_conflicts_with: Value ↔ Value
-- drive_blocked_by: Drive → Drive
-- reasoning_supports: ReasoningPattern → ReasoningPattern
-
-TEXT FOR CONTEXT:
+TEXT FOR ANALYSIS:
 {chunk_text}
 
 REQUIRED OUTPUT FORMAT:
-Return a single JSON object with an "edges" array. Each edge must have this exact structure:
-
 {{
-  "source_id": "doc001-p001-c01-PER-01",
-  "target_id": "doc001-p001-c01-VAL-01",
-  "relation": "persona_has_value",
-  "weight": 0.80,
-  "confidence": 0.90,
-  "evidence": "Direct quote or paraphrase from text"
-}}
-
-Example complete response:
-{{
-  "edges": [
+  "relationships": [
     {{
-      "source_id": "doc001-p001-c01-PER-01",
-      "target_id": "doc001-p001-c01-VAL-01",
-      "relation": "persona_has_value",
+      "source_concept": "Empathetic Learning Mentor",
+      "source_type": "Persona",
+      "target_concept": "Embrace Failure",
+      "target_type": "Value",
+      "relation_type": "persona_has_value",
       "weight": 0.85,
       "confidence": 0.90,
-      "evidence": "Explicitly states failure as learning mechanism"
+      "evidence": "I believe failure is feedback, not identity"
     }},
     {{
-      "source_id": "doc001-p001-c01-PER-01",
-      "target_id": "doc001-p001-c01-DRV-01",
-      "relation": "persona_has_drive",
+      "source_concept": "Empathetic Learning Mentor",
+      "source_type": "Persona",
+      "target_concept": "Student Empowerment",
+      "target_type": "Drive",
+      "relation_type": "persona_has_drive",
       "weight": 0.80,
       "confidence": 0.85,
-      "evidence": "Motivated by preventing student discouragement"
-    }},
-    {{
-      "source_id": "doc001-p001-c01-PER-01",
-      "target_id": "doc001-p001-c01-CON-01",
-      "relation": "persona_constrained_by",
-      "weight": 0.70,
-      "confidence": 0.80,
-      "evidence": "Limited to peer mentoring role"
+      "evidence": "My goal is to help learners build confidence"
     }}
   ]
 }}
 
-IMPORTANT: Use exact node IDs from the NODES list above.
+IMPORTANT: 
+- Use concept labels from AVAILABLE CONCEPTS list above
+- Choose relation_type from VALID RELATIONSHIP TYPES
+- Verify source/target types match the relationship pattern

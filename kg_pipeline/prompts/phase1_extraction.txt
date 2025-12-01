@@ -139,4 +139,4 @@ Your complete response (example):
   ]
 }}
 
-Note: IDs will be auto-generated as {doc_id}-{page_id}-{chunk_id}-{type_code}-{seq}
+Note: IDs will be auto-generated as {{doc_id}}-{{page_id}}-{{chunk_id}}-{{type_code}}-{{seq}}
