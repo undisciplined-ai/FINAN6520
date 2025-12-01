@@ -11,6 +11,9 @@ __pycache__/
 # Pipeline outputs
 outputs/
 
+# Test PDFs
+test_pdfs/
+
 # IDE
 .vscode/
 .idea/
