@@ -83,4 +83,67 @@ Purpose: Capture decisions and plan for building a cohesive knowledge graph (KG)
 - Scale to 15–20 books
 - Baseline report + checklist
 
+## Worker Autoscaling Policy
+- **Phase 0 (Whisper transcription)**: Workers autoscale based on chunk count (<60→4, 60-180→8, >180→16) capped at 80% of OpenAI tier RPM (Tier 1: 500 RPM → max 6 workers/sec).
+- **Phase 2 (Node extraction)**: Same heuristic applied to LLM extraction chunks, conservative 2500 RPM estimate for Anthropic via Vercel Gateway.
+- **Manual override**: Set `parallel.max_workers` in `config/run_config.yaml` to bypass autoscaling.
+- **Telemetry**: Phase 0 logs 429 rate limits, 5xx errors, and retry counts to inform threshold tuning.
+- **Backoff**: Exponential backoff (2^n seconds) on 429/5xx errors prevents retry cascades.
+- **Rationale**: Balance throughput with API stability; large corpus jobs (100+ hours) finish faster without triggering rate limits.
+
+## Incremental Multi-Book Workflow
+- **Fresh mode** (`python scripts/run_pipeline.py --input book.m4b`): Wipes outputs/, processes from scratch
+- **Append mode** (`python scripts/run_pipeline.py --input book2.m4b --append`): Adds to existing KG
+  - Phase 0: Chunk-level caching reuses successful transcriptions; `--retry-failed` flag only retranscribes `[MISSING CHUNK N]` markers
+  - Phase 1: Auto-increments doc### IDs, appends to chunks.jsonl
+  - Phase 2: Skips already-processed chunks (tracked in `.manifest.json`), appends new nodes
+  - Phase 2.5: Re-deduplicates ALL nodes (existing canonical + new) for cross-book trait merging
+  - Phase 3: Appends new edges, deduplicates against existing edges
+- **Checkpointing**: `.manifest.json` tracks processed chunks, doc counter, and phase status to avoid redundant work
+- **Rationale**: Build a unified KG across 15-20 books iteratively; tweak prompts mid-corpus without losing progress
+
+## Jungian Archetype Framework (v1.0)
+- **Purpose**: Layer psychological archetypes into the KG for richer persona navigation and assembly. Enables filtering/scoring personas by archetypal alignment (e.g., "show me Hero-dominant personas").
+- **Architecture**: Two-stage design separates **extraction** (evidence-grounded trait tagging) from **interpretation** (archetype scoring):
+  1. **Phase 2 Extraction**: LLM tags nodes with observable traits from controlled vocabulary (`config/jungian_traits.yaml`). Each node gets `jungian_traits` field with 6 arrays: desires, fears, strategies, talents, weaknesses, themes.
+  2. **Downstream Scoring**: Phase 2.5/4 map trait patterns to 12 archetypes via `config/jungian_archetype_mapping.yaml` using weighted overlap scoring.
+- **12 Archetypes**: Innocent, Everyman, Hero, Caregiver, Explorer, Rebel, Lover, Creator, Jester, Sage, Magician, Ruler.
+- **4 Cardinal Orientations**: Ego (safety/belonging), Order (structure/mastery), Social (connection/change), Freedom (liberation/transcendence).
+- **Trait Vocabulary**: ~60 trait tags organized across 5 dimensions:
+  - Desires: Core motivations (paradise, belonging, prove_worth, protect_others, authenticity, revolution, intimacy, creation, joy, truth, transformation, control)
+  - Fears: Fundamental anxieties (punishment, exclusion, weakness, selfishness, conformity, powerlessness, isolation, mediocrity, boredom, deception, stagnation, chaos)
+  - Strategies: Behavioral approaches (faith, conformity, courage, generosity, autonomy, disruption, devotion, innovation, humor, wisdom, alchemy, responsibility)
+  - Talents: Core competencies (optimism, realism, determination, empathy, curiosity, independence, passion, imagination, levity, insight, vision, leadership)
+  - Weaknesses: Shadow aspects (naivety, cynicism, arrogance, martyrdom, isolation, destructiveness, codependency, impracticality, irresponsibility, detachment, manipulation, tyranny)
+- **Trait Extraction Rules**:
+  - At least one trait tag required per node (across all 6 categories combined)
+  - Empty arrays allowed per category, but cannot have all categories empty
+  - Tags must exist in `config/jungian_traits.yaml` vocabulary
+  - LLMs extract traits "clearly evident in the source text" (not speculative)
+- **Token Optimization**: Compact trait vocabulary formatting (`category: trait_id: description`) minimizes prompt overhead; typical injection ~500 tokens.
+- **Phase 2.5 Enhancement**: Added archetype-aware similarity scoring using trait overlap to improve entity resolution clustering. Nodes with similar trait profiles merge even if text similarity is moderate.
+- **Validation**: `scripts/validate_outputs.py` now checks:
+  - `jungian_traits` field present on all nodes
+  - All 6 categories present (desires/fears/strategies/talents/weaknesses/themes)
+  - Trait IDs exist in vocabulary
+  - At least one non-empty trait array per node
+- **Stability Commitment**: Trait vocabulary is stable post-launch; additions allowed but deletions/renames require migration scripts to avoid breaking historical KG data.
+- **Downstream Usage** (Phase 4):
+  - Score personas against archetype signatures: Sum weighted trait overlap per archetype (e.g., Hero: high prove_worth + courage + determination)
+  - Filter persona assembly by archetype affinity: "Assemble a Sage persona" → select nodes with high wisdom/insight/truth traits
+  - Visualize archetype distribution across corpus: Histogram of dominant archetypes per book
+  - Track archetype consistency: Monitor whether recurring characters maintain trait patterns across books
+- **Design Rationale**:
+  - **Grounded extraction**: LLMs tag observable traits, not abstract archetype labels, reducing hallucination risk
+  - **Flexible interpretation**: Same traits can map to multiple archetypes with different weights (e.g., "courage" appears in Hero, Rebel, Magician)
+  - **Cross-book alignment**: Trait-based deduplication in Phase 2.5 preserves psychological continuity (e.g., "Vimes" entities merge via shared duty/cynicism/determination traits)
+  - **Prompt minimalism**: Compact vocabulary format avoids bloated prompts while maintaining semantic clarity
+  - **Sunk cost avoidance**: Two-stage architecture allows tweaking archetype scoring without re-extracting nodes from source text
+
+## Configuration Files
+- `config/persona_schema.yaml`: Node/edge type definitions + required fields + jungian_traits schema
+- `config/jungian_traits.yaml`: Controlled vocabulary of 60 traits with descriptions (stable post-launch)
+- `config/jungian_archetype_mapping.yaml`: 12 archetypes with trait signatures and scoring weights
+- `config/run_config.yaml`: Model selection, parallel workers, thresholds, autoscaling overrides
+
 Notes: This document summarizes current decisions to prevent context loss and will be updated as the pipeline evolves.

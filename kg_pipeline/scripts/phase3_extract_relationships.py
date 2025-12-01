@@ -24,6 +24,44 @@ from typing import Dict, List, Any
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import yaml
+import time
+
+
+def load_manifest(manifest_path: str = "outputs/.manifest.json") -> Dict:
+    """Load processing manifest."""
+    if not Path(manifest_path).exists():
+        return {
+            "schema_version": "1.1",
+            "last_updated": None,
+            "processed_files": {},
+            "phase_status": {
+                "phase0": {},
+                "phase1": {},
+                "phase2": {},
+                "phase2.5": {"last_run": None, "node_count": 0},
+                "phase3": {"processed_chunks": []}
+            },
+            "doc_counter": 0
+        }
+    with open(manifest_path, 'r') as f:
+        manifest = json.load(f)
+    
+    # Ensure phase3 structure exists
+    if 'phase_status' not in manifest:
+        manifest['phase_status'] = {}
+    if 'phase3' not in manifest['phase_status']:
+        manifest['phase_status']['phase3'] = {"processed_chunks": []}
+    if 'processed_chunks' not in manifest['phase_status']['phase3']:
+        manifest['phase_status']['phase3']['processed_chunks'] = []
+    
+    return manifest
+
+
+def save_manifest(manifest: Dict, manifest_path: str = "outputs/.manifest.json") -> None:
+    """Save processing manifest."""
+    manifest['last_updated'] = time.time()
+    with open(manifest_path, 'w') as f:
+        json.dump(manifest, f, indent=2)
 
 
 def load_env_file(env_path: str = ".env") -> None:
@@ -186,37 +224,6 @@ def match_concept_to_node(concept_label: str, concept_type: str, nodes: List[Dic
     
     # No match found
     return None
-
-
-def validate_edge_type(relation_type: str, source_type: str, target_type: str) -> bool:
-    """
-    Validate that an edge type matches source/target type constraints.
-    
-    Args:
-        relation_type: Proposed edge type from LLM
-        source_type: Source node type
-        target_type: Target node type
-    
-    Returns:
-        True if valid, False otherwise
-    """
-    # Define edge type constraints
-    edge_constraints = {
-        'persona_has_value': ('Persona', 'Value'),
-        'persona_has_drive': ('Persona', 'Drive'),
-        'persona_uses_reasoning': ('Persona', 'ReasoningPattern'),
-        'persona_has_style': ('Persona', 'LinguisticStyle'),
-        'persona_constrained_by': ('Persona', 'Constraint'),
-        'value_conflicts_with': ('Value', 'Value'),
-        'drive_blocked_by': ('Drive', 'Drive'),
-        'reasoning_supports': ('ReasoningPattern', 'ReasoningPattern')
-    }
-    
-    if relation_type not in edge_constraints:
-        return False
-    
-    expected_source, expected_target = edge_constraints[relation_type]
-    return source_type == expected_source and target_type == expected_target
 
 
 def call_llm(prompt: str, config: Dict) -> Dict:
@@ -387,12 +394,13 @@ def process_chunk(chunk_key: str, nodes: List[Dict], chunk: Dict,
             logging.warning(f"Missing relation_type in relationship: {rel}")
             continue
         
-        # Validate type constraints
-        if not validate_edge_type(relation_type, source_type, target_type):
-            logging.warning(f"Invalid edge type: {relation_type} for {source_type}→{target_type}")
+        # Validate relation type exists in schema
+        valid_relations = [et['name'] for et in schema['edge_types']]
+        if relation_type not in valid_relations:
+            logging.warning(f"Invalid relation_type '{relation_type}'. Must be one of: {valid_relations}")
             continue
         
-        # Build valid edge
+        # Build valid edge (no type constraints - any node can relate to any other)
         edge = {
             'source_id': source_id,
             'target_id': target_id,
@@ -440,17 +448,32 @@ def main():
         logging.error(f"Error: {chunks_path} not found. Run Phase 1 first.")
         sys.exit(1)
     
+    # Load manifest for chunk tracking
+    manifest = load_manifest()
+    processed_chunks_list = manifest['phase_status']['phase3'].get('processed_chunks', [])
+    processed_chunks_set = set(processed_chunks_list)
+    
     logging.info("="*60)
-    logging.info("Phase 3: Relationship Extraction")
+    logging.info("Phase 3: Relationship Extraction (Incremental)")
     logging.info("="*60)
     logging.info(f"Loading canonical nodes from: {nodes_path}")
     logging.info(f"Loading chunks from: {chunks_path}")
     
     canonical_nodes = load_canonical_nodes(nodes_path)
-    nodes_by_chunk = group_nodes_by_chunk(canonical_nodes)
+    all_nodes_by_chunk = group_nodes_by_chunk(canonical_nodes)
     chunks = load_chunks(chunks_path)
     
-    logging.info(f"Loaded {len(nodes_by_chunk)} chunk(s) with nodes")
+    # Filter out already-processed chunks
+    nodes_by_chunk = {k: v for k, v in all_nodes_by_chunk.items() if k not in processed_chunks_set}
+    
+    logging.info(f"Total chunks with nodes: {len(all_nodes_by_chunk)}")
+    logging.info(f"Already processed: {len(processed_chunks_set)}")
+    logging.info(f"New chunks to process: {len(nodes_by_chunk)}")
+    
+    if not nodes_by_chunk:
+        logging.info("No new chunks to process. Exiting.")
+        return
+    
     logging.info(f"Model: {config['phase2']['model']}")
     logging.info(f"Output: outputs/edges.jsonl")
     logging.info("")
@@ -467,6 +490,18 @@ def main():
     max_workers = parallel_config.get('max_workers', 4)
     
     output_path = "outputs/edges.jsonl"
+    
+    # Load existing edges to track what's already processed
+    existing_edges = set()
+    if Path(output_path).exists():
+        logging.info("Loading existing edges for incremental processing...")
+        with open(output_path, 'r') as f:
+            for line in f:
+                edge = json.loads(line)
+                edge_key = (edge['source_id'], edge['target_id'], edge['relation'])
+                existing_edges.add(edge_key)
+        logging.info(f"Found {len(existing_edges)} existing edges")
+        seen_edges.update(existing_edges)
     
     if parallel_enabled:
         logging.info(f"Using parallel processing with {max_workers} workers")
@@ -485,8 +520,8 @@ def main():
                 future = executor.submit(process_chunk, chunk_key, nodes, chunk, schema, prompt_template, config)
                 future_to_chunk[future] = (chunk_key, len(nodes))
             
-            # Collect results as they complete and deduplicate
-            with open(output_path, 'w') as output_file:
+            # Collect results as they complete and deduplicate (append mode)
+            with open(output_path, 'a') as output_file:
                 completed = 0
                 for future in as_completed(future_to_chunk):
                     chunk_key, node_count = future_to_chunk[future]
@@ -506,6 +541,9 @@ def main():
                                 edge_type_counts[edge['relation']] += 1
                                 new_edges += 1
                         
+                        # Track in manifest
+                        processed_chunks_set.add(chunk_key)
+                        
                         dup_count = len(edges) - new_edges
                         logging.info(f"[{completed}/{len(future_to_chunk)}] ✓ {chunk_key}: {new_edges} edge(s) ({dup_count} duplicates)")
                     except Exception as e:
@@ -513,7 +551,7 @@ def main():
     else:
         logging.info("Using sequential processing")
         
-        with open(output_path, 'w') as output_file:
+        with open(output_path, 'a') as output_file:
             for i, (chunk_key, nodes) in enumerate(sorted(nodes_by_chunk.items()), 1):
                 logging.info(f"Processing chunk {i}/{len(nodes_by_chunk)}: {chunk_key} ({len(nodes)} nodes)")
                 
@@ -534,6 +572,9 @@ def main():
                         all_edges.append(edge)
                         edge_type_counts[edge['relation']] += 1
                         new_edges += 1
+                
+                # Track in manifest
+                processed_chunks_set.add(chunk_key)
                 
                 logging.info(f"  ✓ Extracted {new_edges} edge(s) ({len(edges) - new_edges} duplicates filtered)")
     
@@ -601,12 +642,16 @@ def main():
     logging.info(f"Output written to: {output_path}")
     logging.info("="*60)
     
+    # Save manifest with processed chunks
+    manifest['phase_status']['phase3']['processed_chunks'] = list(processed_chunks_set)
+    save_manifest(manifest)
+    
     # Show sample edges
     if all_edges:
         logging.info("")
         logging.info("Sample edges:")
-        for edge in all_edges[:3]:
-            logging.info(f"  {edge['source_id']} → {edge['target_id']} ({edge['relation']})")
+        for edge in all_edges[:5]:
+            logging.info(f"  {edge['source_id']} --[{edge['relation']}]--> {edge['target_id']}")
 
 
 if __name__ == "__main__":

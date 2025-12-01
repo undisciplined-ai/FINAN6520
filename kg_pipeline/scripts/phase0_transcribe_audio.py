@@ -24,6 +24,48 @@ from typing import List, Dict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import yaml
 from openai import OpenAI
+import time
+
+
+def suggest_workers(chunk_count: int, tier_rpm: int = 500, manual_override: int = None) -> int:
+    """
+    Suggest optimal worker count based on chunk count and API tier limits.
+    
+    Args:
+        chunk_count: Number of chunks to process
+        tier_rpm: Rate limit (requests per minute) for your OpenAI tier
+        manual_override: If set, return this value instead of calculating
+    
+    Returns:
+        Recommended number of workers (4, 8, or 16)
+    
+    Heuristic:
+        - <60 chunks: 4 workers (small jobs, avoid overhead)
+        - 60-180 chunks: 8 workers (medium jobs, good balance)
+        - >180 chunks: 16 workers (large jobs, maximize throughput)
+        
+    Caps at 80% of tier RPM to prevent throttling.
+    """
+    if manual_override:
+        logging.info(f"Using manual worker override: {manual_override}")
+        return manual_override
+    
+    # Calculate based on chunk count
+    if chunk_count < 60:
+        suggested = 4
+    elif chunk_count < 180:
+        suggested = 8
+    else:
+        suggested = 16
+    
+    # Cap at 80% of tier limit to avoid 429s
+    max_safe_workers = int(tier_rpm * 0.8 / 60)  # Convert RPM to requests/second
+    if suggested > max_safe_workers:
+        logging.warning(f"Capping workers from {suggested} to {max_safe_workers} based on tier limit (RPM: {tier_rpm})")
+        suggested = max_safe_workers
+    
+    logging.info(f"Autoscaled workers: {suggested} (chunk_count={chunk_count}, tier_rpm={tier_rpm})")
+    return suggested
 
 
 def load_env_file(env_path: str = ".env") -> None:
@@ -172,6 +214,7 @@ def transcribe_chunk(chunk_path: str, chunk_index: int, client: OpenAI, audio_pa
     """
     Transcribe a single audio chunk using OpenAI Whisper API.
     Checks cache first to avoid re-transcribing.
+    Implements exponential backoff for rate limit errors.
     
     Args:
         chunk_path: Path to audio chunk file
@@ -191,38 +234,56 @@ def transcribe_chunk(chunk_path: str, chunk_index: int, client: OpenAI, audio_pa
                 'chunk_index': chunk_index,
                 'transcript': cached_transcript,
                 'success': True,
-                'cached': True
+                'cached': True,
+                'retries': 0
             }
     
-    try:
-        with open(chunk_path, "rb") as audio_file:
-            response = client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-                response_format="text"
-            )
-        
-        transcript = response.strip()
-        
-        # Save to cache
-        if audio_path:
-            save_cached_chunk(audio_path, chunk_index, transcript)
-        
-        return {
-            'chunk_index': chunk_index,
-            'transcript': transcript,
-            'success': True,
-            'cached': False
-        }
-    except Exception as e:
-        logging.error(f"Failed to transcribe chunk {chunk_index}: {e}")
-        return {
-            'chunk_index': chunk_index,
-            'transcript': '',
-            'success': False,
-            'error': str(e),
-            'cached': False
-        }
+    # Exponential backoff parameters
+    max_retries = 3
+    base_delay = 2
+    
+    for attempt in range(max_retries + 1):
+        try:
+            with open(chunk_path, "rb") as audio_file:
+                response = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    response_format="text"
+                )
+            
+            transcript = response.strip()
+            
+            # Save to cache
+            if audio_path:
+                save_cached_chunk(audio_path, chunk_index, transcript)
+            
+            return {
+                'chunk_index': chunk_index,
+                'transcript': transcript,
+                'success': True,
+                'cached': False,
+                'retries': attempt
+            }
+        except Exception as e:
+            error_str = str(e)
+            is_rate_limit = '429' in error_str or 'rate_limit' in error_str.lower()
+            is_server_error = '5' in error_str[:3] if len(error_str) >= 3 else False
+            
+            if (is_rate_limit or is_server_error) and attempt < max_retries:
+                delay = base_delay ** (attempt + 1)
+                logging.warning(f"Chunk {chunk_index} hit {'rate limit' if is_rate_limit else 'server error'}, retrying in {delay}s (attempt {attempt + 1}/{max_retries})")
+                time.sleep(delay)
+                continue
+            
+            logging.error(f"Failed to transcribe chunk {chunk_index} after {attempt + 1} attempts: {e}")
+            return {
+                'chunk_index': chunk_index,
+                'transcript': '',
+                'success': False,
+                'error': error_str,
+                'cached': False,
+                'retries': attempt
+            }
 
 
 def transcribe_audio_parallel(chunk_paths: List[str], audio_path: str, max_workers: int = 8, max_retries: int = 3) -> Dict:
@@ -238,13 +299,20 @@ def transcribe_audio_parallel(chunk_paths: List[str], audio_path: str, max_worke
     Returns:
         Dict with 'transcript' (combined text), 'stats' (success metrics), 'failed_chunks' (list)
     """
-    import time
     client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
     
     logging.info(f"Transcribing {len(chunk_paths)} chunks with {max_workers} workers...")
     
     results = {}
     failed_indices = set()
+    
+    # Telemetry tracking
+    telemetry = {
+        'rate_limit_429s': 0,
+        'server_5xxs': 0,
+        'total_retries': 0,
+        'chunk_latencies': []
+    }
     
     # Retry loop
     for attempt in range(max_retries):
@@ -279,6 +347,16 @@ def transcribe_audio_parallel(chunk_paths: List[str], audio_path: str, max_worke
                 result = future.result()
                 round_results[chunk_index] = result
                 completed += 1
+                
+                # Collect telemetry
+                if result.get('retries', 0) > 0:
+                    telemetry['total_retries'] += result['retries']
+                if not result['success']:
+                    error = result.get('error', '')
+                    if '429' in error or 'rate_limit' in error.lower():
+                        telemetry['rate_limit_429s'] += 1
+                    elif any(str(code) in error for code in ['500', '502', '503', '504']):
+                        telemetry['server_5xxs'] += 1
                 
                 if result['success']:
                     successful += 1
@@ -325,6 +403,11 @@ def transcribe_audio_parallel(chunk_paths: List[str], audio_path: str, max_worke
     logging.info(f"  Failed: {len(failed_chunks)} ({100-success_rate:.1f}%)")
     if failed_chunks:
         logging.warning(f"  Failed chunk indices: {failed_chunks}")
+    logging.info("")
+    logging.info("Rate Limit Telemetry:")
+    logging.info(f"  429 rate limits: {telemetry['rate_limit_429s']}")
+    logging.info(f"  5xx server errors: {telemetry['server_5xxs']}")
+    logging.info(f"  Total retries: {telemetry['total_retries']}")
     logging.info("="*60)
     
     # Combine transcripts in order
@@ -374,11 +457,18 @@ def cleanup_chunks(chunk_paths: List[str]) -> None:
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python scripts/phase0_transcribe_audio.py /path/to/audiobook.m4b")
+        print("Usage: python scripts/phase0_transcribe_audio.py /path/to/audiobook.m4b [output.txt] [--retry-failed]")
+        print("  --retry-failed: Only re-transcribe chunks marked as [MISSING CHUNK N]")
         sys.exit(1)
     
     audio_path = sys.argv[1]
-    output_path = sys.argv[2] if len(sys.argv) >= 3 else "outputs/transcript.txt"
+    retry_mode = '--retry-failed' in sys.argv
+    
+    # Determine output path
+    if len(sys.argv) >= 3 and not sys.argv[2].startswith('--'):
+        output_path = sys.argv[2]
+    else:
+        output_path = "outputs/transcript.txt"
     
     if not Path(audio_path).exists():
         logging.error(f"Error: Audio file not found: {audio_path}")
@@ -401,10 +491,6 @@ def main():
     logging.info(f"Input: {audio_path}")
     logging.info(f"Transcript output: {output_path}")
     
-    # Get parallel config
-    parallel_config = config.get('parallel', {})
-    max_workers = parallel_config.get('max_workers', 8)
-    
     # Get transcription config
     transcription_config = config.get('transcription', {})
     max_retries = transcription_config.get('max_retries', 3)
@@ -413,10 +499,42 @@ def main():
     # Split audio into chunks
     chunk_paths = split_audio_into_chunks(audio_path, chunk_duration_minutes=20)
     
+    # Get parallel config
+    parallel_config = config.get('parallel', {})
+    config_workers = parallel_config.get('max_workers', None)  # None allows autoscaling
+    
+    # Autoscale workers based on chunk count
+    max_workers = suggest_workers(
+        chunk_count=len(chunk_paths),
+        tier_rpm=500,  # Tier 1 limit
+        manual_override=config_workers
+    )
+    
+    # Check for retry-only mode
+    chunks_to_transcribe = chunk_paths
+    if retry_mode and Path(output_path).exists():
+        logging.info("Retry mode: scanning existing transcript for failed chunks...")
+        with open(output_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        import re
+        failed_indices = set()
+        for match in re.finditer(r'\[MISSING CHUNK (\d+)\]', content):
+            failed_indices.add(int(match.group(1)))
+        
+        if failed_indices:
+            logging.info(f"Found {len(failed_indices)} failed chunks to retry: {sorted(failed_indices)}")
+            # Filter to only retry failed chunks
+            chunks_to_transcribe = [chunk_paths[i] for i in sorted(failed_indices) if i < len(chunk_paths)]
+            logging.info(f"Will transcribe {len(chunks_to_transcribe)} chunks")
+        else:
+            logging.info("No failed chunks found in transcript. Exiting.")
+            return
+    
     try:
         # Transcribe in parallel with retry
         result = transcribe_audio_parallel(
-            chunk_paths, 
+            chunks_to_transcribe, 
             audio_path,
             max_workers=max_workers,
             max_retries=max_retries

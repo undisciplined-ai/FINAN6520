@@ -13,6 +13,7 @@ Usage:
 import sys
 import json
 import logging
+import time
 from pathlib import Path
 from typing import List, Dict, Any
 import yaml
@@ -238,22 +239,49 @@ def process_text_file(text_path: str, doc_num: int, config: Dict, output_file) -
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python scripts/phase1_chunk_pdfs.py <input_file> [input_file2 ...]")
+        print("Usage: python scripts/phase1_chunk_pdfs.py <input_file> [input_file2 ...] [--append]")
         print("Example: python scripts/phase1_chunk_pdfs.py pdfs/*.pdf")
         print("Example: python scripts/phase1_chunk_pdfs.py outputs/transcript.txt")
+        print("  --append: Add to existing chunks.jsonl instead of overwriting")
         sys.exit(1)
     
     # Load configuration
     config = load_config()
     setup_logging(config)
     
-    input_files = sys.argv[1:]
+    # Parse arguments
+    append_mode = '--append' in sys.argv
+    input_files = [arg for arg in sys.argv[1:] if not arg.startswith('--')]
     output_path = "outputs/chunks.jsonl"
+    
+    # Load manifest for doc counter
+    manifest_path = "outputs/.manifest.json"
+    if append_mode and Path(manifest_path).exists():
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+        doc_start = manifest.get('doc_counter', 0)
+    else:
+        manifest = {
+            "schema_version": "1.1",
+            "last_updated": None,
+            "processed_files": {},
+            "phase_status": {
+                "phase0": {},
+                "phase1": {},
+                "phase2": {},
+                "phase2.5": {"last_run": None, "node_count": 0},
+                "phase3": {"processed_chunks": []}
+            },
+            "doc_counter": 0
+        }
+        doc_start = 0
     
     logging.info("="*60)
     logging.info("Phase 1: Text Ingestion & Chunking")
     logging.info("="*60)
+    logging.info(f"Mode: {'Append' if append_mode else 'Fresh'}")
     logging.info(f"Files to process: {len(input_files)}")
+    logging.info(f"Starting doc number: {doc_start + 1}")
     logging.info(f"Chunk size: {config['chunk_size']} tokens")
     logging.info(f"Overlap: {config['chunk_overlap']} tokens")
     logging.info(f"Output: {output_path}")
@@ -266,7 +294,8 @@ def main():
     document_index = {}
     total_chunks = 0
     
-    with open(output_path, 'w') as output_file:
+    file_mode = 'a' if append_mode else 'w'
+    with open(output_path, file_mode) as output_file:
         for doc_num, input_path in enumerate(input_files, start=1):
             if not Path(input_path).exists():
                 logging.warning(f"File not found: {input_path}, skipping")
@@ -275,8 +304,8 @@ def main():
             # Detect file type
             file_ext = Path(input_path).suffix.lower()
             
-            # Store document mapping
-            doc_id = f"doc{doc_num:03d}"
+            # Store document mapping (incorporate doc_start to avoid collisions)
+            doc_id = f"doc{doc_start + doc_num:03d}"
             document_index[doc_id] = str(Path(input_path).name)
             
             if file_ext == '.pdf':
@@ -293,8 +322,27 @@ def main():
             total_chunks += chunks_created
             logging.info(f"  ✓ {Path(input_path).name}: {chunks_created} chunks")
     
+    # Update manifest
+    manifest['doc_counter'] = doc_start + len(input_files)
+    if 'phase_status' not in manifest:
+        manifest['phase_status'] = {}
+    manifest['phase_status']['phase1'] = {
+        'last_run': time.time(),
+        'files_processed': len(input_files),
+        'total_chunks': total_chunks
+    }
+    
+    with open(manifest_path, 'w') as f:
+        json.dump(manifest, f, indent=2)
+    
     # Write document index
     index_path = "outputs/document_index.json"
+    if append_mode and Path(index_path).exists():
+        with open(index_path, 'r') as f:
+            existing_index = json.load(f)
+        existing_index.update(document_index)
+        document_index = existing_index
+    
     with open(index_path, 'w') as f:
         json.dump(document_index, f, indent=2)
     

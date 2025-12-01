@@ -24,6 +24,113 @@ from typing import Dict, List, Any
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import yaml
+import time
+
+
+def get_default_manifest() -> Dict:
+    """Get default manifest structure."""
+    return {
+        "schema_version": "1.1",
+        "last_updated": None,
+        "processed_files": {},
+        "phase_status": {
+            "phase0": {},
+            "phase1": {},
+            "phase2": {},
+            "phase2.5": {"last_run": None, "node_count": 0},
+            "phase3": {"processed_chunks": set()}
+        },
+        "doc_counter": 0
+    }
+
+
+def migrate_manifest(manifest: Dict) -> Dict:
+    """Migrate old manifest schemas to current version."""
+    schema_version = manifest.get('schema_version', '1.0')
+    
+    if schema_version == '1.0':
+        # Add missing phase_status keys with defaults
+        default = get_default_manifest()
+        if 'phase_status' not in manifest:
+            manifest['phase_status'] = default['phase_status']
+        else:
+            for phase_key, phase_default in default['phase_status'].items():
+                manifest['phase_status'].setdefault(phase_key, phase_default)
+        
+        manifest['schema_version'] = '1.1'
+    
+    return manifest
+
+
+def load_manifest(manifest_path: str = "outputs/.manifest.json") -> Dict:
+    """Load processing manifest with migration."""
+    if not Path(manifest_path).exists():
+        return get_default_manifest()
+    
+    with open(manifest_path, 'r') as f:
+        manifest = json.load(f)
+    
+    # Migrate if needed
+    manifest = migrate_manifest(manifest)
+    
+    return manifest
+
+
+def save_manifest(manifest: Dict, manifest_path: str = "outputs/.manifest.json") -> None:
+    """Save processing manifest."""
+    manifest['last_updated'] = time.time()
+    
+    # Convert sets to lists for JSON serialization
+    if 'phase_status' in manifest and 'phase3' in manifest['phase_status']:
+        if 'processed_chunks' in manifest['phase_status']['phase3']:
+            if isinstance(manifest['phase_status']['phase3']['processed_chunks'], set):
+                manifest['phase_status']['phase3']['processed_chunks'] = list(
+                    manifest['phase_status']['phase3']['processed_chunks']
+                )
+    
+    with open(manifest_path, 'w') as f:
+        json.dump(manifest, f, indent=2)
+
+
+def suggest_workers(chunk_count: int, tier_rpm: int = 2500, manual_override: int = None) -> int:
+    """
+    Suggest optimal worker count based on chunk count and API tier limits.
+    
+    Args:
+        chunk_count: Number of chunks to process
+        tier_rpm: Rate limit (requests per minute) for Anthropic via Vercel Gateway
+        manual_override: If set, return this value instead of calculating
+    
+    Returns:
+        Recommended number of workers (4, 8, or 16)
+    
+    Heuristic:
+        - <60 chunks: 4 workers (small jobs, avoid overhead)
+        - 60-180 chunks: 8 workers (medium jobs, good balance)
+        - >180 chunks: 16 workers (large jobs, maximize throughput)
+        
+    Caps at 80% of tier RPM to prevent throttling.
+    """
+    if manual_override:
+        logging.info(f"Using manual worker override: {manual_override}")
+        return manual_override
+    
+    # Calculate based on chunk count
+    if chunk_count < 60:
+        suggested = 4
+    elif chunk_count < 180:
+        suggested = 8
+    else:
+        suggested = 16
+    
+    # Cap at 80% of tier limit to avoid 429s
+    max_safe_workers = int(tier_rpm * 0.8 / 60)  # Convert RPM to requests/second
+    if suggested > max_safe_workers:
+        logging.warning(f"Capping workers from {suggested} to {max_safe_workers} based on tier limit (RPM: {tier_rpm})")
+        suggested = max_safe_workers
+    
+    logging.info(f"Autoscaled workers: {suggested} (chunk_count={chunk_count}, tier_rpm={tier_rpm})")
+    return suggested
 
 
 def load_env_file(env_path: str = ".env") -> None:
@@ -51,6 +158,12 @@ def load_schema(schema_path: str = "config/persona_schema.yaml") -> Dict:
         return yaml.safe_load(f)
 
 
+def load_jungian_traits(traits_path: str = "config/jungian_traits.yaml") -> Dict:
+    """Load Jungian trait vocabulary."""
+    with open(traits_path, 'r') as f:
+        return yaml.safe_load(f)
+
+
 def load_prompt_template(template_path: str) -> str:
     """Load prompt template."""
     with open(template_path, 'r') as f:
@@ -74,6 +187,21 @@ def format_node_types_for_prompt(schema: Dict) -> str:
     lines = []
     for node_type, config in schema['node_types'].items():
         lines.append(f"- {node_type}: {config['description']}")
+    return '\n'.join(lines)
+
+
+def format_trait_vocabulary(traits: Dict) -> str:
+    """Format Jungian trait vocabulary for prompt (compact version)."""
+    vocab = traits['trait_vocabulary']
+    lines = []
+    
+    for category, traits_dict in vocab.items():
+        lines.append(f"\n{category.upper()}:")
+        for trait_id, trait_info in traits_dict.items():
+            # Include just ID and brief description to minimize tokens
+            desc = trait_info['description']
+            lines.append(f"  - {trait_id}: {desc}")
+    
     return '\n'.join(lines)
 
 
@@ -170,7 +298,7 @@ def mint_node_id(doc_id: str, page_id: str, chunk_id: str, type_code: str, seq: 
     return f"{doc_id}-{page_id}-{chunk_id}-{type_code}-{seq:02d}"
 
 
-def process_chunk(chunk: Dict, schema: Dict, prompt_template: str, config: Dict) -> List[Dict]:
+def process_chunk(chunk: Dict, schema: Dict, traits: Dict, prompt_template: str, config: Dict) -> List[Dict]:
     """
     Process a single chunk to extract nodes.
     
@@ -185,12 +313,14 @@ def process_chunk(chunk: Dict, schema: Dict, prompt_template: str, config: Dict)
     """
     # Format prompt
     node_types_text = format_node_types_for_prompt(schema)
+    trait_vocabulary_text = format_trait_vocabulary(traits)
     
     # Escape braces in chunk text to prevent format() errors
     safe_chunk_text = chunk['text'].replace('{', '{{').replace('}', '}}')
     
     prompt = prompt_template.format(
         node_types=node_types_text,
+        trait_vocabulary=trait_vocabulary_text,
         doc_id=chunk['doc_id'],
         page_id=chunk['page_id'],
         chunk_id=chunk['chunk_id'],
@@ -249,9 +379,10 @@ def main():
     # Load environment variables
     load_env_file()
     
-    # Load configuration and schema
+    # Load configuration, schema, and Jungian traits
     config = load_config()
     schema = load_schema()
+    traits = load_jungian_traits()
     setup_logging(config)
     
     # Check for API key
@@ -265,6 +396,9 @@ def main():
     prompt_template_path = config['phase1']['prompt_template']
     prompt_template = load_prompt_template(prompt_template_path)
     
+    # Load manifest
+    manifest = load_manifest()
+    
     # Load chunks
     chunks_path = "outputs/chunks.jsonl"
     if not Path(chunks_path).exists():
@@ -276,14 +410,27 @@ def main():
     logging.info("="*60)
     logging.info(f"Loading chunks from: {chunks_path}")
     
-    chunks = []
+    # Load all chunks
+    all_chunks = []
     with open(chunks_path, 'r') as f:
         for line in f:
-            chunks.append(json.loads(line))
+            all_chunks.append(json.loads(line))
     
-    logging.info(f"Loaded {len(chunks)} chunk(s)")
+    # Filter to only new chunks (not in phase2 status)
+    manifest['phase_status'].setdefault('phase2', {})
+    processed_chunks = set(manifest['phase_status']['phase2'].keys())
+    chunks = [c for c in all_chunks if f"{c['doc_id']}-{c['page_id']}-{c['chunk_id']}" not in processed_chunks]
+    
+    logging.info(f"Total chunks: {len(all_chunks)}")
+    logging.info(f"Already processed: {len(processed_chunks)}")
+    logging.info(f"New chunks to process: {len(chunks)}")
+    
+    if not chunks:
+        logging.info("No new chunks to process. Exiting.")
+        return
+    
     logging.info(f"Model: {config['phase1']['model']}")
-    logging.info(f"Output: outputs/nodes.jsonl")
+    logging.info(f"Output: outputs/nodes.jsonl (append mode)")
     logging.info("")
     
     # Process chunks (parallel or sequential based on config)
@@ -292,7 +439,14 @@ def main():
     
     parallel_config = config.get('parallel', {})
     parallel_enabled = parallel_config.get('enabled', False)
-    max_workers = parallel_config.get('max_workers', 4)
+    config_workers = parallel_config.get('max_workers', None)  # None allows autoscaling
+    
+    # Autoscale workers based on chunk count
+    max_workers = suggest_workers(
+        chunk_count=len(chunks),
+        tier_rpm=2500,  # Conservative estimate for Anthropic via Vercel
+        manual_override=config_workers
+    )
     
     output_path = "outputs/nodes.jsonl"
     
@@ -303,11 +457,11 @@ def main():
             # Submit all chunks
             future_to_chunk = {}
             for chunk in chunks:
-                future = executor.submit(process_chunk, chunk, schema, prompt_template, config)
+                future = executor.submit(process_chunk, chunk, schema, traits, prompt_template, config)
                 future_to_chunk[future] = chunk
             
-            # Collect results as they complete
-            with open(output_path, 'w') as output_file:
+            # Collect results as they complete (append mode)
+            with open(output_path, 'a') as output_file:
                 completed = 0
                 for future in as_completed(future_to_chunk):
                     chunk = future_to_chunk[future]
@@ -323,17 +477,23 @@ def main():
                             output_file.write(json.dumps(node) + '\n')
                             all_nodes.append(node)
                             node_type_counts[node['type']] += 1
+                        
+                        # Track in manifest
+                        manifest['phase_status']['phase2'][chunk_label] = {
+                            'processed': True,
+                            'node_count': len(nodes)
+                        }
                     except Exception as e:
                         logging.error(f"[{completed}/{len(chunks)}] ✗ {chunk_label}: {e}")
     else:
         logging.info("Using sequential processing")
         
-        with open(output_path, 'w') as output_file:
+        with open(output_path, 'a') as output_file:
             for i, chunk in enumerate(chunks, 1):
                 chunk_label = f"{chunk['doc_id']}-{chunk['page_id']}-{chunk['chunk_id']}"
                 logging.info(f"Processing chunk {i}/{len(chunks)}: {chunk_label}")
                 
-                nodes = process_chunk(chunk, schema, prompt_template, config)
+                nodes = process_chunk(chunk, schema, traits, prompt_template, config)
                 
                 # Write nodes to file
                 for node in nodes:
@@ -341,13 +501,29 @@ def main():
                     all_nodes.append(node)
                     node_type_counts[node['type']] += 1
                 
+                # Track in manifest
+                manifest['phase_status']['phase2'][chunk_label] = {
+                    'processed': True,
+                    'node_count': len(nodes)
+                }
+                
                 logging.info(f"  ✓ Extracted {len(nodes)} node(s)")
+    
+    # Save manifest
+    save_manifest(manifest)
+    
+    # Write metadata about new nodes for Phase 2.5
+    metadata_path = "outputs/nodes_new.jsonl"
+    with open(metadata_path, 'w') as f:
+        for node in all_nodes:
+            f.write(json.dumps(node) + '\n')
     
     # Summary
     logging.info("")
     logging.info("="*60)
     logging.info("✅ Phase 2 Complete")
-    logging.info(f"Total nodes extracted: {len(all_nodes)}")
+    logging.info(f"Nodes extracted this run: {len(all_nodes)}")
+    logging.info(f"New nodes written to: {metadata_path} (for Phase 2.5 incremental processing)")
     logging.info("")
     logging.info("Node counts by type:")
     for node_type, count in sorted(node_type_counts.items()):

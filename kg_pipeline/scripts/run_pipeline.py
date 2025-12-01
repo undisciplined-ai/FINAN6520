@@ -105,10 +105,19 @@ def main():
         action="store_true",
         help="Clean outputs directory before running",
     )
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        help="Append to existing KG instead of starting fresh",
+    )
 
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+    if args.clean and args.append:
+        logging.error("Error: --clean and --append cannot be used together")
+        sys.exit(1)
 
     if args.clean:
         logging.info("Cleaning outputs directory")
@@ -158,9 +167,13 @@ def main():
         logging.error("No textual inputs available for Phase 1 after preprocessing.")
         sys.exit(1)
 
+    phase1_cmd = ["python", "scripts/phase1_chunk_pdfs.py", *[str(path) for path in phase1_inputs]]
+    if args.append:
+        phase1_cmd.append("--append")
+    
     run_step(
         "Phase 1: Text Chunking",
-        ["python", "scripts/phase1_chunk_pdfs.py", *[str(path) for path in phase1_inputs]],
+        phase1_cmd,
     )
 
     # Phase 2: Node Extraction

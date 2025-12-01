@@ -1,13 +1,12 @@
 node_types:
-  Persona:
-    code: "PER"
-    description: "High-level cognitive identity with worldview and communication style"
+  CharacterTrait:
+    code: "CDT"
+    description: "Observable personality characteristic, habit, or disposition"
     fields:
-      identity_statement: string
-      worldview: string
-      core_values: list[string]
-      communication_style: enum[directive, socratic, nurturing, analytical]
-      baseline_tone: string
+      trait_type: enum[behavioral, cognitive, emotional, social]
+      manifestation: string
+      intensity: float
+      consistency: enum[always, usually, situational, rare]
   Value:
     code: "VAL"
     description: "Prescriptive principle with behavioral directive"
@@ -47,20 +46,14 @@ node_types:
       affect_modulation: string
 
 edge_types:
-  - name: "persona_has_value"
-    description: "Links persona to a core principle"
-  - name: "persona_has_drive"
-    description: "Links persona to a goal/motivation"
-  - name: "persona_uses_reasoning"
-    description: "Links persona to preferred reasoning pattern"
-  - name: "persona_has_style"
-    description: "Links persona to linguistic style"
-  - name: "value_conflicts_with"
-    description: "Two values in tension"
-  - name: "drive_blocked_by"
-    description: "One goal/conflict obstructs another"
-  - name: "reasoning_supports"
-    description: "One reasoning pattern builds on another"
+  - name: "causes"
+    description: "Source influences, triggers, or motivates target. Asymmetric causality."
+  - name: "conflicts_with"
+    description: "Source opposes, blocks, or creates tension with target"
+  - name: "evidences"
+    description: "Source is observable proof or manifestation of target"
+  - name: "reinforces"
+    description: "Source strengthens, amplifies, or supports target"
 
 # Common fields for all nodes
 node_common_fields:
@@ -71,6 +64,13 @@ node_common_fields:
   - reasoning_inspiration: optional[string]  # Optional meta-cognitive summary of what in the text inspired this node
   - tags: list[string]   # Categorization
   - importance: float    # 0.0-1.0
+  - jungian_traits:      # Jungian trait tags from controlled vocabulary (at least one required)
+      desires: list[string]      # Core desires evident in node
+      fears: list[string]        # Core fears evident in node
+      strategies: list[string]   # Strategies evident in node
+      talents: list[string]      # Talents/strengths evident in node
+      weaknesses: list[string]   # Shadow traits/weaknesses evident in node
+      themes: list[string]       # High-level thematic keywords
   - provenance:
       doc_id: string
       doc_name: string

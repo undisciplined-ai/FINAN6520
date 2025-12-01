@@ -29,10 +29,14 @@ phase3:
   max_reasoning: 3
   max_styles: 2
 
+# Entity Resolution (Phase 2.5)
+entity_resolution:
+  similarity_threshold: 0.75  # Minimum similarity to merge nodes (0.0-1.0)
+
 # Parallel Processing
 parallel:
   enabled: true
-  max_workers: 4  # Number of concurrent LLM calls (Phase 2 and Phase 3 local pass)
+  max_workers: null  # null = autoscale based on workload; set to 4/8/16 to override
 
 # Transcription (Phase 0)
 transcription:

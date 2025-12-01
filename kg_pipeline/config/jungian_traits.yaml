@@ -1,0 +1,312 @@
+# Jungian Trait Vocabulary
+# 
+# This controlled vocabulary defines observable psychological traits for tagging nodes.
+# LLMs extract these granular traits during Phase 2; downstream phases map trait patterns
+# to the 12 Jungian archetypes via jungian_archetype_mapping.yaml.
+#
+# Usage: Each node must include at least one trait tag from this vocabulary in its
+# jungian_traits field. Tags should reflect traits clearly evident in the source text.
+
+version: "1.0"
+
+trait_vocabulary:
+  
+  # Core Desires - What the persona/concept fundamentally seeks
+  desires:
+    paradise:
+      description: "Seeking safety, innocence, or utopian ideals"
+      archetype_hint: "Innocent"
+    
+    belonging:
+      description: "Wanting to fit in and connect with a group"
+      archetype_hint: "Everyman"
+    
+    prove_worth:
+      description: "Demonstrating competence through courageous achievement"
+      archetype_hint: "Hero"
+    
+    protect_others:
+      description: "Caring for and safeguarding others"
+      archetype_hint: "Caregiver"
+    
+    freedom_to_explore:
+      description: "Seeking autonomy and authentic self-discovery through experience"
+      archetype_hint: "Explorer"
+    
+    revenge_revolution:
+      description: "Overturning broken systems or seeking justice through disruption"
+      archetype_hint: "Rebel"
+    
+    intimacy_experience:
+      description: "Deep connection and sensory/emotional richness"
+      archetype_hint: "Lover"
+    
+    create_enduring_value:
+      description: "Building something meaningful that lasts"
+      archetype_hint: "Creator"
+    
+    live_in_moment:
+      description: "Embracing present joy and spontaneity"
+      archetype_hint: "Jester"
+    
+    find_truth:
+      description: "Understanding reality through analysis and wisdom"
+      archetype_hint: "Sage"
+    
+    understand_fundamental_laws:
+      description: "Grasping deeper patterns and making visions real"
+      archetype_hint: "Magician"
+    
+    control:
+      description: "Establishing order and exercising authority"
+      archetype_hint: "Ruler"
+  
+  # Core Fears - What the persona/concept seeks to avoid
+  fears:
+    punishment:
+      description: "Anxiety about doing wrong or being judged"
+      archetype_hint: "Innocent"
+    
+    exclusion:
+      description: "Fear of being left out or standing alone"
+      archetype_hint: "Everyman"
+    
+    weakness_vulnerability:
+      description: "Fear of appearing weak or incompetent"
+      archetype_hint: "Hero"
+    
+    selfishness_ingratitude:
+      description: "Fear of being selfish or unappreciated for service"
+      archetype_hint: "Caregiver"
+    
+    trapped_conformity:
+      description: "Fear of being caged or losing authenticity"
+      archetype_hint: "Explorer"
+    
+    powerlessness:
+      description: "Fear of being ineffectual or controlled"
+      archetype_hint: "Rebel"
+    
+    being_alone_unwanted:
+      description: "Fear of isolation or rejection"
+      archetype_hint: "Lover"
+    
+    mediocrity:
+      description: "Fear of producing ordinary or meaningless work"
+      archetype_hint: "Creator"
+    
+    boredom:
+      description: "Fear of dullness or wasting life"
+      archetype_hint: "Jester"
+    
+    being_duped_ignorance:
+      description: "Fear of being misled or remaining ignorant"
+      archetype_hint: "Sage"
+    
+    unintended_consequences:
+      description: "Fear of causing harm despite good intentions"
+      archetype_hint: "Magician"
+    
+    chaos_being_overthrown:
+      description: "Fear of losing control or authority"
+      archetype_hint: "Ruler"
+  
+  # Strategies - How the persona/concept pursues goals
+  strategies:
+    do_things_right:
+      description: "Following rules, best practices, and moral guidelines"
+      archetype_hint: "Innocent"
+    
+    develop_solid_virtues:
+      description: "Being down-to-earth, relatable, and dependable"
+      archetype_hint: "Everyman"
+    
+    be_strong_competent:
+      description: "Building capability and facing challenges head-on"
+      archetype_hint: "Hero"
+    
+    do_things_for_others:
+      description: "Acting in service and care for others"
+      archetype_hint: "Caregiver"
+    
+    journey_seek_experience:
+      description: "Exploring new paths and embracing the unknown"
+      archetype_hint: "Explorer"
+    
+    disrupt_destroy_shock:
+      description: "Breaking norms and challenging the status quo"
+      archetype_hint: "Rebel"
+    
+    become_attractive:
+      description: "Cultivating appeal and deepening connections"
+      archetype_hint: "Lover"
+    
+    develop_artistic_skill:
+      description: "Honing craft and expressing vision"
+      archetype_hint: "Creator"
+    
+    play_make_jokes:
+      description: "Using humor and lightness to engage"
+      archetype_hint: "Jester"
+    
+    seek_information_knowledge:
+      description: "Researching, analyzing, and reflecting"
+      archetype_hint: "Sage"
+    
+    develop_vision_live_by_it:
+      description: "Creating and embodying a transformative vision"
+      archetype_hint: "Magician"
+    
+    exercise_power:
+      description: "Taking charge and establishing systems"
+      archetype_hint: "Ruler"
+  
+  # Talents - Natural strengths and gifts
+  talents:
+    faith_optimism:
+      description: "Natural hope and positive outlook"
+      archetype_hint: "Innocent"
+    
+    realism_empathy:
+      description: "Grounded perspective and understanding others"
+      archetype_hint: "Everyman"
+    
+    competence_courage:
+      description: "Skill and bravery in action"
+      archetype_hint: "Hero"
+    
+    compassion_generosity:
+      description: "Deep care and selfless giving"
+      archetype_hint: "Caregiver"
+    
+    autonomy_ambition:
+      description: "Self-direction and strong drive"
+      archetype_hint: "Explorer"
+    
+    outrageousness_radical_freedom:
+      description: "Boldness and breaking boundaries"
+      archetype_hint: "Rebel"
+    
+    passion_commitment:
+      description: "Deep devotion and emotional intensity"
+      archetype_hint: "Lover"
+    
+    creativity_imagination:
+      description: "Originality and inventive thinking"
+      archetype_hint: "Creator"
+    
+    joy:
+      description: "Natural ability to generate delight and fun"
+      archetype_hint: "Jester"
+    
+    wisdom_intelligence:
+      description: "Deep insight and analytical power"
+      archetype_hint: "Sage"
+    
+    finding_win_win_solutions:
+      description: "Creating mutual benefit through insight"
+      archetype_hint: "Magician"
+    
+    responsibility_leadership:
+      description: "Taking charge and stewarding resources"
+      archetype_hint: "Ruler"
+  
+  # Weaknesses - Shadow traits and failure modes
+  weaknesses:
+    naive_boring:
+      description: "Overly simplistic or lacking edge"
+      archetype_hint: "Innocent"
+    
+    losing_self_to_blend_in:
+      description: "Sacrificing identity for acceptance"
+      archetype_hint: "Everyman"
+    
+    arrogance_always_fighting:
+      description: "Excessive pride and constant conflict-seeking"
+      archetype_hint: "Hero"
+    
+    martyrdom_exploitation:
+      description: "Self-sacrifice that enables dependency"
+      archetype_hint: "Caregiver"
+    
+    aimless_wandering:
+      description: "Losing direction or becoming a misfit"
+      archetype_hint: "Explorer"
+    
+    crossing_to_dark_side:
+      description: "Using disruption destructively or criminally"
+      archetype_hint: "Rebel"
+    
+    losing_identity_to_please:
+      description: "Abandoning self to maintain connection"
+      archetype_hint: "Lover"
+    
+    perfectionism:
+      description: "Paralysis from impossible standards"
+      archetype_hint: "Creator"
+    
+    frivolity_wasting_time:
+      description: "Avoiding depth or responsibility"
+      archetype_hint: "Jester"
+    
+    analysis_paralysis:
+      description: "Overthinking without action"
+      archetype_hint: "Sage"
+    
+    becoming_manipulative:
+      description: "Using insight to control rather than serve"
+      archetype_hint: "Magician"
+    
+    authoritarian_unable_to_delegate:
+      description: "Excessive control and micromanagement"
+      archetype_hint: "Ruler"
+  
+  # Thematic Keywords - High-level patterns from the Jungian wheel
+  themes:
+    innovation:
+      description: "Creating new solutions or approaches"
+      orientation_hint: "Ego/Order boundary"
+    
+    safety:
+      description: "Prioritizing security and stability"
+      orientation_hint: "Order"
+    
+    knowledge:
+      description: "Seeking understanding and wisdom"
+      orientation_hint: "Order/Freedom boundary"
+    
+    liberation:
+      description: "Breaking free from constraints"
+      orientation_hint: "Freedom"
+    
+    power:
+      description: "Wielding influence and authority"
+      orientation_hint: "Ego"
+    
+    mastery:
+      description: "Achieving excellence and expertise"
+      orientation_hint: "Ego"
+    
+    intimacy:
+      description: "Deep personal connection"
+      orientation_hint: "Social"
+    
+    pleasure:
+      description: "Enjoyment and sensory experience"
+      orientation_hint: "Social"
+    
+    belonging:
+      description: "Group connection and acceptance"
+      orientation_hint: "Social"
+    
+    service:
+      description: "Helping and supporting others"
+      orientation_hint: "Order/Social boundary"
+    
+    control:
+      description: "Establishing order and systems"
+      orientation_hint: "Order"
+
+# Note: archetype_hint and orientation_hint are for reference only and not extracted by LLMs.
+# These hints help humans understand the trait-to-archetype mapping defined in 
+# jungian_archetype_mapping.yaml.

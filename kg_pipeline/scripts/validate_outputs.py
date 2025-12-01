@@ -21,10 +21,23 @@ def load_schema(schema_path: str = "config/persona_schema.yaml") -> Dict:
         return yaml.safe_load(f)
 
 
+def load_jungian_traits(traits_path: str = "config/jungian_traits.yaml") -> Set[str]:
+    """Load valid Jungian trait IDs from vocabulary."""
+    with open(traits_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    valid_traits = set()
+    for category, traits in config['trait_vocabulary'].items():
+        if category in ['desires', 'fears', 'strategies', 'talents', 'weaknesses', 'themes']:
+            valid_traits.update(traits.keys())
+    
+    return valid_traits
+
+
 def validate_id_format(node_id: str, expected_type_code: str) -> List[str]:
     """Validate node ID follows doc-page-chunk-type-seq format."""
     errors = []
-    pattern = r'^doc\d{3}-p\d{3}-c\d{2}-([A-Z]{3})-\d{2}$'
+    pattern = r'^doc\d{3}-p\d{3}-c\d{2}-(CDT|VAL|DRV|REA|LIN)-\d{2}$'
     match = re.match(pattern, node_id)
     
     if not match:
@@ -35,12 +48,12 @@ def validate_id_format(node_id: str, expected_type_code: str) -> List[str]:
     return errors
 
 
-def validate_node(node: Dict, schema: Dict) -> List[str]:
+def validate_node(node: Dict, schema: Dict, valid_traits: Set[str]) -> List[str]:
     """Validate a single node against schema."""
     errors = []
     
     # Check required common fields
-    required_common = ['id', 'type', 'label', 'description', 'tags', 'importance', 'fields', 'provenance']
+    required_common = ['id', 'type', 'label', 'description', 'tags', 'importance', 'fields', 'provenance', 'jungian_traits']
     for field in required_common:
         if field not in node:
             errors.append(f"Node {node.get('id', 'UNKNOWN')} missing required field: {field}")
@@ -109,6 +122,32 @@ def validate_node(node: Dict, schema: Dict) -> List[str]:
             if field not in prov:
                 errors.append(f"Node {node['id']} missing provenance field: {field}")
     
+    # Validate jungian_traits field
+    if 'jungian_traits' in node:
+        traits = node['jungian_traits']
+        
+        # Must be a dictionary
+        if not isinstance(traits, dict):
+            errors.append(f"Node {node['id']} jungian_traits must be a dictionary")
+        else:
+            # Check expected categories
+            expected_categories = ['desires', 'fears', 'strategies', 'talents', 'weaknesses', 'themes']
+            for category in expected_categories:
+                if category not in traits:
+                    errors.append(f"Node {node['id']} jungian_traits missing category: {category}")
+                elif not isinstance(traits[category], list):
+                    errors.append(f"Node {node['id']} jungian_traits['{category}'] must be a list")
+                else:
+                    # Validate trait IDs exist in vocabulary
+                    for trait_id in traits[category]:
+                        if trait_id not in valid_traits:
+                            errors.append(f"Node {node['id']} has invalid trait '{trait_id}' in {category}")
+            
+            # Require at least one non-empty trait array
+            has_traits = any(traits.get(cat, []) for cat in expected_categories)
+            if not has_traits:
+                errors.append(f"Node {node['id']} must have at least one trait tag across all categories")
+    
     return errors
 
 
@@ -149,7 +188,7 @@ def validate_edge(edge: Dict, node_ids: Set[str], schema: Dict) -> List[str]:
     return errors
 
 
-def validate_file(filepath: str, schema: Dict, node_ids: Set[str] = None) -> tuple[List[str], Set[str]]:
+def validate_file(filepath: str, schema: Dict, valid_traits: Set[str], node_ids: Set[str] = None) -> tuple[List[str], Set[str]]:
     """Validate a JSONL file. Returns (errors, node_ids_found)."""
     errors = []
     new_node_ids = set()
@@ -169,7 +208,7 @@ def validate_file(filepath: str, schema: Dict, node_ids: Set[str] = None) -> tup
                 
                 # Determine if this is a node or edge
                 if 'type' in obj:  # It's a node
-                    node_errors = validate_node(obj, schema)
+                    node_errors = validate_node(obj, schema, valid_traits)
                     if node_errors:
                         errors.extend([f"{filepath}:{line_num} - {err}" for err in node_errors])
                     if 'id' in obj:
@@ -198,12 +237,15 @@ def main():
         sys.exit(1)
     
     schema = load_schema()
+    valid_traits = load_jungian_traits()
     all_errors = []
+    
+    print(f"Loaded {len(valid_traits)} valid Jungian traits from vocabulary")
     
     # Validate nodes first
     nodes_file = sys.argv[1]
     print(f"Validating nodes: {nodes_file}")
-    node_errors, node_ids = validate_file(nodes_file, schema)
+    node_errors, node_ids = validate_file(nodes_file, schema, valid_traits)
     all_errors.extend(node_errors)
     print(f"  Found {len(node_ids)} nodes")
     
@@ -211,7 +253,7 @@ def main():
     if len(sys.argv) > 2:
         edges_file = sys.argv[2]
         print(f"Validating edges: {edges_file}")
-        edge_errors, _ = validate_file(edges_file, schema, node_ids)
+        edge_errors, _ = validate_file(edges_file, schema, valid_traits, node_ids)
         all_errors.extend(edge_errors)
     
     # Report results

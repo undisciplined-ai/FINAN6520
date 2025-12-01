@@ -4,18 +4,15 @@ AVAILABLE CONCEPTS:
 {nodes}
 
 VALID RELATIONSHIP TYPES:
-1. persona_has_value: Persona → Value (core principle)
-2. persona_has_drive: Persona → Drive (goal/motivation)
-3. persona_uses_reasoning: Persona → ReasoningPattern (decision approach)
-4. persona_has_style: Persona → LinguisticStyle (communication)
-5. value_conflicts_with: Value ↔ Value (tension)
-6. drive_blocked_by: Drive → Drive (obstruction)
-7. reasoning_supports: ReasoningPattern → ReasoningPattern (builds on)
+1. causes: Source influences, triggers, or motivates target (directional)
+2. conflicts_with: Source opposes, blocks, or creates tension with target
+3. evidences: Source is observable proof or manifestation of target (directional)
+4. reinforces: Source strengthens, amplifies, or supports target (directional)
 
 INSTRUCTIONS:
 - Identify relationships between the listed concepts
 - Choose the appropriate relationship type from the list above
-- ONLY suggest relationships where source/target types match the allowed pattern
+- Any node type can relate to any other node type—use your judgment based on the text
 - Rate confidence from 0.0 (uncertain) to 1.0 (explicit in text)
 - Rate weight from 0.0 (weak) to 1.0 (foundational)
 - Provide a brief synthesis (1–2 sentences) explaining how the chunk demonstrates the relationship—no quotes, names, or external references
@@ -28,24 +25,34 @@ REQUIRED OUTPUT FORMAT:
 {{
   "relationships": [
     {{
-      "source_concept": "Empathetic Learning Mentor",
-      "source_type": "Persona",
-      "target_concept": "Embrace Failure",
-      "target_type": "Value",
-      "relation_type": "persona_has_value",
+      "source_concept": "Growth Mindset",
+      "source_type": "Value",
+      "target_concept": "Persistent Practice",
+      "target_type": "CharacterTrait",
+      "relation_type": "causes",
       "weight": 0.85,
       "confidence": 0.90,
-      "evidence": "This persona treats failure as diagnostic fuel, consistently reframing setbacks as instructions for growth."
+      "evidence": "The belief that abilities can be developed directly drives the behavior of sustained practice despite setbacks."
     }},
     {{
-      "source_concept": "Empathetic Learning Mentor",
-      "source_type": "Persona",
-      "target_concept": "Student Empowerment",
+      "source_concept": "Direct Communication",
+      "source_type": "LinguisticStyle",
+      "target_concept": "Analytical Thinking",
+      "target_type": "CharacterTrait",
+      "relation_type": "evidences",
+      "weight": 0.75,
+      "confidence": 0.80,
+      "evidence": "The crisp, unambiguous phrasing reveals a tendency to prioritize clarity and logical structure over social niceties."
+    }},
+    {{
+      "source_concept": "Autonomy",
+      "source_type": "Value",
+      "target_concept": "Team Collaboration",
       "target_type": "Drive",
-      "relation_type": "persona_has_drive",
-      "weight": 0.80,
-      "confidence": 0.85,
-      "evidence": "Every action described in the chunk funnels toward boosting learner confidence, making empowerment the explicit pursuit."
+      "relation_type": "conflicts_with",
+      "weight": 0.70,
+      "confidence": 0.75,
+      "evidence": "The emphasis on self-directed work creates tension with the goal of building consensus in group settings."
     }}
   ]
 }}

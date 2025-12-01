@@ -11,7 +11,11 @@ INSTRUCTIONS:
 - Highlight meta-cognition: infer the author/character's thinking approach or mechanism behind behaviors.
 - behavioral_directive fields must be actionable templates the persona can follow.
 - Include all type-specific fields from the schema plus the optional "reasoning_inspiration" string when you can clearly summarize the inspiration (otherwise omit it).
+- **Tag each node with Jungian traits from the vocabulary below.** Include at least one trait tag per node; select only traits clearly evident in the text. Use empty arrays `[]` if no trait from a category is present.
 - Return ONLY valid JSON (no markdown, no code blocks, no explanatory text).
+
+JUNGIAN TRAIT VOCABULARY:
+{trait_vocabulary}
 
 SOURCE CONTEXT:
 - Document: {doc_id}
@@ -24,19 +28,26 @@ TEXT TO ANALYZE:
 REQUIRED OUTPUT FORMAT:
 Return a single JSON object with a "nodes" array. Each node must match one of these exact schemas:
 
-Persona node:
+CharacterTrait node:
 {{
-  "type": "Persona",
-  "label": "Brief identity label",
-  "description": "One-sentence persona summary",
-  "tags": ["tag1"],
+  "type": "CharacterTrait",
+  "label": "Brief trait label",
+  "description": "Observable characteristic or pattern",
+  "tags": ["personality"],
   "importance": 0.85,
+  "jungian_traits": {{
+    "desires": ["prove_worth"],
+    "fears": ["weakness_vulnerability"],
+    "strategies": ["be_strong_competent"],
+    "talents": ["competence_courage"],
+    "weaknesses": [],
+    "themes": ["mastery"]
+  }},
   "fields": {{
-    "identity_statement": "I am [prescriptive self-description]",
-    "worldview": "Core philosophy about how the world works",
-    "core_values": ["value_label1", "value_label2"],
-    "communication_style": "socratic",
-    "baseline_tone": "Calm and curious"
+    "trait_type": "cognitive",
+    "manifestation": "Validates ideas through first-principles reasoning before accepting them",
+    "intensity": 0.80,
+    "consistency": "usually"
   }}
 }}
 
@@ -47,6 +58,14 @@ Value node:
   "description": "What this value means",
   "tags": ["category"],
   "importance": 0.75,
+  "jungian_traits": {{
+    "desires": ["freedom_to_explore"],
+    "fears": [],
+    "strategies": ["journey_seek_experience"],
+    "talents": ["autonomy_ambition"],
+    "weaknesses": [],
+    "themes": ["innovation", "liberation"]
+  }},
   "fields": {{
     "principle": "Core belief statement",
     "behavioral_directive": "When [context], do [action]",
@@ -63,6 +82,14 @@ Drive node:
   "description": "What they're pursuing",
   "tags": ["motivation"],
   "importance": 0.80,
+  "jungian_traits": {{
+    "desires": ["protect_others"],
+    "fears": ["selfishness_ingratitude"],
+    "strategies": ["do_things_for_others"],
+    "talents": ["compassion_generosity"],
+    "weaknesses": [],
+    "themes": ["service"]
+  }},
   "fields": {{
     "goal_description": "What they're trying to achieve",
     "goal_type": "internal",
@@ -80,6 +107,14 @@ ReasoningPattern node:
   "description": "How this reasoning works",
   "tags": ["logic"],
   "importance": 0.70,
+  "jungian_traits": {{
+    "desires": ["find_truth"],
+    "fears": [],
+    "strategies": ["seek_information_knowledge"],
+    "talents": ["wisdom_intelligence"],
+    "weaknesses": ["analysis_paralysis"],
+    "themes": ["knowledge"]
+  }},
   "fields": {{
     "trigger": "When [situation] occurs",
     "preferred_response": "Then [action template]",
@@ -95,6 +130,14 @@ LinguisticStyle node:
   "description": "Communication characteristics",
   "tags": ["tone"],
   "importance": 0.65,
+  "jungian_traits": {{
+    "desires": ["live_in_moment"],
+    "fears": [],
+    "strategies": ["play_make_jokes"],
+    "talents": ["joy"],
+    "weaknesses": [],
+    "themes": ["pleasure"]
+  }},
   "fields": {{
     "formality": "professional",
     "complexity": "moderate",
