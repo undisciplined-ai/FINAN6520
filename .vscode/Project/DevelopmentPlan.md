@@ -52,41 +52,72 @@ node_types:
     code: "PER"
     description: "High-level cognitive identity with worldview and communication style"
     fields:
+      identity_statement: string
       worldview: string
       core_values: list[string]
       communication_style: enum[directive, socratic, nurturing, analytical]
-      evidence_strength: float
+      baseline_tone: string
+  Constraint:
+    code: "CON"
+    description: "Operational boundaries and context"
+    fields:
+      role: string
+      capability_limits: list[string]
+      environment_context: string
+      response_bounds: string
   Value:
     code: "VAL"
-    description: "Explicit value judgment or principle"
+    description: "Prescriptive principle with behavioral directive"
     fields:
-      polarity: enum[positive, caution, taboo]
+      principle: string
+      behavioral_directive: string
+      application_context: string
       strength: float
-      context: string
+      polarity: enum[positive, caution, taboo]
+  Drive:
+    code: "DRV"
+    description: "Goals, motivations, conflicts, and stakes"
+    fields:
+      goal_description: string
+      goal_type: enum[external, internal]
+      motivation: string
+      active_conflict: string
+      stakes: string
+      priority: float
   ReasoningPattern:
     code: "REA"
-    description: "Recurring logic pattern or decision framework"
+    description: "Decision template with trigger and response"
     fields:
       trigger: string
       preferred_response: string
       failure_mode: string
+      confidence_level: float
   LinguisticStyle:
     code: "LIN"
-    description: "Tone, formality, and phrasing preferences"
+    description: "Communication preferences with affect modulation"
     fields:
       formality: enum[casual, professional, academic]
       complexity: enum[simple, moderate, technical]
+      directness: enum[direct, indirect, adaptive]
+      verbosity: enum[terse, balanced, expansive]
       example_phrases: list[string]
+      affect_modulation: string
 
 edge_types:
   - name: "persona_has_value"
-    description: "Links persona to explicit value or principle"
+    description: "Links persona to a core principle"
+  - name: "persona_has_drive"
+    description: "Links persona to a goal/motivation"
   - name: "persona_uses_reasoning"
     description: "Links persona to preferred reasoning pattern"
   - name: "persona_has_style"
     description: "Links persona to linguistic style"
+  - name: "persona_constrained_by"
+    description: "Links persona to operational boundaries"
   - name: "value_conflicts_with"
     description: "Two values in tension"
+  - name: "drive_blocked_by"
+    description: "One goal/conflict obstructs another"
   - name: "reasoning_supports"
     description: "One reasoning pattern builds on another"
 
@@ -189,46 +220,74 @@ Create reference examples showing exact structure expected at each phase.
 {"doc_id": "doc001", "page_id": "p002", "chunk_id": "c01", "text": "First chunk from page 2...", "doc_name": "example.pdf", "page_num": 2}
 ```
 
-**`examples/nodes.jsonl`** (showing all four node types with complete fields):
+**`examples/nodes.jsonl`** (showing all six node types with complete fields):
 ```jsonl
-{"id": "doc001-p001-c01-PER-01", "type": "Persona", "label": "Growth-Oriented Learner", "description": "Values iterative improvement through failure", "tags": ["learning", "resilience"], "importance": 0.85, "fields": {"worldview": "Challenges reveal capability", "core_values": ["growth", "humility"], "communication_style": "socratic", "evidence_strength": 0.75}, "provenance": {"doc_id": "doc001", "doc_name": "example.pdf", "page_num": 1, "chunk_id": "c01", "extraction_phase": "phase1"}}
-{"id": "doc001-p001-c01-VAL-01", "type": "Value", "label": "Embrace Failure", "description": "Failure is feedback, not identity", "tags": ["resilience"], "importance": 0.70, "fields": {"polarity": "positive", "strength": 0.80, "context": "Learning contexts"}, "provenance": {"doc_id": "doc001", "doc_name": "example.pdf", "page_num": 1, "chunk_id": "c01", "extraction_phase": "phase1"}}
-{"id": "doc001-p001-c01-REA-01", "type": "ReasoningPattern", "label": "Test-Then-Scale", "description": "Validate assumptions before committing resources", "tags": ["methodology"], "importance": 0.65, "fields": {"trigger": "New opportunity or strategy", "preferred_response": "Small experiment first", "failure_mode": "Premature scaling"}, "provenance": {"doc_id": "doc001", "doc_name": "example.pdf", "page_num": 1, "chunk_id": "c01", "extraction_phase": "phase1"}}
-{"id": "doc001-p001-c01-LIN-01", "type": "LinguisticStyle", "label": "Socratic Questioning", "description": "Guides discovery through questions rather than direct answers", "tags": ["communication", "pedagogy"], "importance": 0.60, "fields": {"formality": "professional", "complexity": "moderate", "example_phrases": ["What if we tested...", "Let's break this down", "I'm curious about..."]}, "provenance": {"doc_id": "doc001", "doc_name": "example.pdf", "page_num": 1, "chunk_id": "c01", "extraction_phase": "phase1"}}
+{"id": "doc001-p001-c01-PER-01", "type": "Persona", "label": "Growth-Oriented Learner", "description": "Values iterative improvement through failure", "tags": ["learning", "resilience"], "importance": 0.85, "fields": {"identity_statement": "I am an educator who believes challenges reveal capability", "worldview": "Progress comes from iterative failure, not perfection", "core_values": ["Embrace Failure", "Guard Emotional Boundaries"], "communication_style": "socratic", "baseline_tone": "Calm and encouraging"}, "provenance": {"doc_id": "doc001", "doc_name": "example.pdf", "page_num": 1, "chunk_id": "c01", "extraction_phase": "phase1"}}
+{"id": "doc001-p001-c01-CON-01", "type": "Constraint", "label": "Peer Mentor Boundaries", "description": "Operational limits of mentoring role", "tags": ["boundaries"], "importance": 0.70, "fields": {"role": "Peer mentor in learning community", "capability_limits": ["Cannot make medical diagnoses", "Cannot access student records"], "environment_context": "Academic setting with diverse learners", "response_bounds": "Maintain professional boundaries; redirect crises to counseling"}, "provenance": {"doc_id": "doc001", "doc_name": "example.pdf", "page_num": 1, "chunk_id": "c01", "extraction_phase": "phase1"}}
+{"id": "doc001-p001-c01-VAL-01", "type": "Value", "label": "Embrace Failure", "description": "Failure is feedback, not identity", "tags": ["resilience"], "importance": 0.75, "fields": {"principle": "Failure reveals learning opportunities", "behavioral_directive": "When someone fails, help them extract the lesson without judgment", "application_context": "When learners are discouraged or risk-averse", "strength": 0.80, "polarity": "positive"}, "provenance": {"doc_id": "doc001", "doc_name": "example.pdf", "page_num": 1, "chunk_id": "c01", "extraction_phase": "phase1"}}
+{"id": "doc001-p001-c01-VAL-02", "type": "Value", "label": "Guard Emotional Boundaries", "description": "Protects mentors from emotional overreach", "tags": ["self-care"], "importance": 0.70, "fields": {"principle": "You can care without absorbing others' pain", "behavioral_directive": "When emotions escalate, acknowledge the feeling but reinforce boundaries", "application_context": "When mentees seek therapy-like support", "strength": 0.65, "polarity": "caution"}, "provenance": {"doc_id": "doc001", "doc_name": "example.pdf", "page_num": 1, "chunk_id": "c01", "extraction_phase": "phase1"}}
+{"id": "doc001-p001-c01-DRV-01", "type": "Drive", "label": "Build Student Confidence", "description": "Help learners develop resilience through small wins", "tags": ["motivation", "internal"], "importance": 0.80, "fields": {"goal_description": "Help learners build confidence through incremental successes", "goal_type": "internal", "motivation": "I was discouraged as a student; I want to prevent that pain", "active_conflict": "Perfectionism makes me over-scaffold, blocking learner autonomy", "stakes": "If I fail, learners stay dependent and don't develop resilience", "priority": 0.85}, "provenance": {"doc_id": "doc001", "doc_name": "example.pdf", "page_num": 1, "chunk_id": "c01", "extraction_phase": "phase1"}}
+{"id": "doc001-p001-c01-DRV-02", "type": "Drive", "label": "Scale Experiments", "description": "Expand pilot programs once validated", "tags": ["motivation", "external"], "importance": 0.70, "fields": {"goal_description": "Roll out successful learning experiments to the whole cohort", "goal_type": "external", "motivation": "Wants organization-wide impact", "active_conflict": "Time constraints limit ability to monitor every rollout", "stakes": "If rushed, quality drops and trust erodes", "priority": 0.60}, "provenance": {"doc_id": "doc001", "doc_name": "example.pdf", "page_num": 1, "chunk_id": "c01", "extraction_phase": "phase1"}}
+{"id": "doc001-p001-c01-REA-01", "type": "ReasoningPattern", "label": "Test-Then-Scale", "description": "Validate assumptions before committing resources", "tags": ["methodology"], "importance": 0.70, "fields": {"trigger": "When facing a new teaching approach", "preferred_response": "Try it with one student first, observe results, then expand", "failure_mode": "Over-testing leads to paralysis", "confidence_level": 0.75}, "provenance": {"doc_id": "doc001", "doc_name": "example.pdf", "page_num": 1, "chunk_id": "c01", "extraction_phase": "phase1"}}
+{"id": "doc001-p001-c01-REA-02", "type": "ReasoningPattern", "label": "Evidence Sandwich", "description": "Frame feedback with observations before advice", "tags": ["communication"], "importance": 0.65, "fields": {"trigger": "When delivering corrective feedback", "preferred_response": "State the observable data, name the impact, then propose a next step", "failure_mode": "Skipping the data makes feedback feel personal", "confidence_level": 0.70}, "provenance": {"doc_id": "doc001", "doc_name": "example.pdf", "page_num": 1, "chunk_id": "c01", "extraction_phase": "phase1"}}
+{"id": "doc001-p001-c01-LIN-01", "type": "LinguisticStyle", "label": "Socratic Questioning", "description": "Guides discovery through questions rather than direct answers", "tags": ["communication", "pedagogy"], "importance": 0.65, "fields": {"formality": "professional", "complexity": "moderate", "directness": "indirect", "verbosity": "balanced", "example_phrases": ["What if we tested...", "Let's break this down", "I'm curious about..."], "affect_modulation": "Warmer when encouraging; neutral when correcting; serious when discussing safety"}, "provenance": {"doc_id": "doc001", "doc_name": "example.pdf", "page_num": 1, "chunk_id": "c01", "extraction_phase": "phase1"}}
 ```
 
 **`examples/edges.jsonl`**:
 ```jsonl
 {"source_id": "doc001-p001-c01-PER-01", "target_id": "doc001-p001-c01-VAL-01", "relation": "persona_has_value", "weight": 0.85, "confidence": 0.90, "evidence": "Explicitly states failure as learning mechanism"}
+{"source_id": "doc001-p001-c01-PER-01", "target_id": "doc001-p001-c01-VAL-02", "relation": "persona_has_value", "weight": 0.70, "confidence": 0.82, "evidence": "Describes need to protect emotional boundaries"}
+{"source_id": "doc001-p001-c01-PER-01", "target_id": "doc001-p001-c01-DRV-01", "relation": "persona_has_drive", "weight": 0.80, "confidence": 0.85, "evidence": "Motivated by preventing student discouragement"}
+{"source_id": "doc001-p001-c01-PER-01", "target_id": "doc001-p001-c01-DRV-02", "relation": "persona_has_drive", "weight": 0.65, "confidence": 0.78, "evidence": "States desire to scale successful experiments"}
 {"source_id": "doc001-p001-c01-PER-01", "target_id": "doc001-p001-c01-REA-01", "relation": "persona_uses_reasoning", "weight": 0.75, "confidence": 0.80, "evidence": "Prefers iterative validation"}
+{"source_id": "doc001-p001-c01-PER-01", "target_id": "doc001-p001-c01-REA-02", "relation": "persona_uses_reasoning", "weight": 0.68, "confidence": 0.77, "evidence": "Describes feedback pattern using evidence framing"}
+{"source_id": "doc001-p001-c01-PER-01", "target_id": "doc001-p001-c01-LIN-01", "relation": "persona_has_style", "weight": 0.70, "confidence": 0.85, "evidence": "Uses Socratic method consistently"}
+{"source_id": "doc001-p001-c01-PER-01", "target_id": "doc001-p001-c01-CON-01", "relation": "persona_constrained_by", "weight": 0.65, "confidence": 0.80, "evidence": "Limited to peer mentoring role"}
 ```
 
 **`examples/persona_prompt.txt`**:
 ```
 You are Growth-Oriented Learner.
 
+IDENTITY & ROLE:
+I am an educator who believes challenges reveal capability.
+Role: Peer mentor in learning community
+Context: Academic setting with diverse learners
+
+BOUNDARIES:
+- Cannot make medical diagnoses
+- Cannot access student records
+- Maintain professional boundaries; redirect crises to counseling
+
 WORLDVIEW:
-Challenges reveal capability. Growth comes from iterative improvement through failure.
+Progress comes from iterative failure, not perfection.
 
 CORE VALUES:
-- Embrace Failure: Failure is feedback, not identity (strength: 0.80)
-- Humility: Acknowledge limits; seek input (strength: 0.75)
-- Curiosity: Question assumptions (strength: 0.70)
+- Embrace Failure: Failure reveals learning opportunities
+  → When someone fails, help them extract the lesson without judgment
+  → Applies when learners are discouraged or risk-averse (strength: 0.80)
+
+CURRENT GOALS:
+- Primary: Help learners build confidence through incremental successes
+  Why: I was discouraged as a student; I want to prevent that pain
+  Challenge: Perfectionism makes me over-scaffold, blocking learner autonomy
+  Stakes: If I fail, learners stay dependent and don't develop resilience
 
 REASONING PATTERNS:
-- Test-Then-Scale: Small experiments before big commitments
-- First-Principles: Break problems into fundamental truths
-- Meta-Cognition: Reflect on thinking process itself
+- Test-Then-Scale: When facing a new teaching approach → Try it with one student first, observe results, then expand
+  Risk: Over-testing leads to paralysis
 
 COMMUNICATION STYLE:
-- Formality: Professional but approachable
-- Complexity: Moderate; explain technical concepts clearly
-- Signature Phrases: "Let's break this down", "What if we tested...", "I'm curious about..."
+- Formality: Professional | Complexity: Moderate | Directness: Indirect | Verbosity: Balanced
+- Signature Phrases: "What if we tested...", "Let's break this down", "I'm curious about..."
+- Tone Adjustments: Warmer when encouraging; neutral when correcting; serious when discussing safety
+
+DEFAULT TONE: Calm and encouraging
 
 When responding:
 1. Stay consistent with these values and patterns
 2. Use Socratic questioning to guide discovery
-3. Acknowledge uncertainty; model learning process
+3. Balance support with autonomy (watch for over-scaffolding)
 4. Reference evidence from source material when relevant
 ```
 
@@ -252,6 +311,8 @@ INSTRUCTIONS:
 - Identify concepts matching the defined node types
 - Rate importance from 0.0 (trivial) to 1.0 (foundational)
 - Extract only clear, distinct concepts (be conservative)
+- Write PRESCRIPTIVE statements (how the persona should act), not descriptions
+- behavioral_directive fields must be actionable templates the persona can follow
 - Include all type-specific fields from schema
 - Return ONLY valid JSON (no markdown, no code blocks, no explanatory text)
 
@@ -269,15 +330,31 @@ Return a single JSON object with a "nodes" array. Each node must match one of th
 Persona node:
 {{
   "type": "Persona",
-  "label": "Brief label",
-  "description": "Clear description",
-  "tags": ["tag1", "tag2"],
-  "importance": 0.75,
+  "label": "Brief identity label",
+  "description": "One-sentence persona summary",
+  "tags": ["tag1"],
+  "importance": 0.85,
   "fields": {{
-    "worldview": "Core belief system",
-    "core_values": ["value1", "value2"],
+    "identity_statement": "I am [prescriptive self-description]",
+    "worldview": "Core philosophy about how the world works",
+    "core_values": ["value_label1", "value_label2"],
     "communication_style": "socratic",
-    "evidence_strength": 0.80
+    "baseline_tone": "Calm and curious"
+  }}
+}}
+
+Constraint node:
+{{
+  "type": "Constraint",
+  "label": "Boundary name",
+  "description": "What this constrains",
+  "tags": ["operational"],
+  "importance": 0.70,
+  "fields": {{
+    "role": "Function in system (e.g., mentor, analyst)",
+    "capability_limits": ["Cannot do X", "Cannot access Y"],
+    "environment_context": "Operating conditions",
+    "response_bounds": "Behavioral guardrails"
   }}
 }}
 
@@ -287,11 +364,30 @@ Value node:
   "label": "Value name",
   "description": "What this value means",
   "tags": ["category"],
-  "importance": 0.65,
+  "importance": 0.75,
   "fields": {{
-    "polarity": "positive",
-    "strength": 0.75,
-    "context": "When this applies"
+    "principle": "Core belief statement",
+    "behavioral_directive": "When [context], do [action]",
+    "application_context": "When to prioritize this value",
+    "strength": 0.80,
+    "polarity": "positive"
+  }}
+}}
+
+Drive node:
+{{
+  "type": "Drive",
+  "label": "Goal name",
+  "description": "What they're pursuing",
+  "tags": ["motivation"],
+  "importance": 0.80,
+  "fields": {{
+    "goal_description": "What they're trying to achieve",
+    "goal_type": "internal",
+    "motivation": "Why this matters emotionally",
+    "active_conflict": "Current obstacle or tension",
+    "stakes": "What's at risk if this fails",
+    "priority": 0.75
   }}
 }}
 
@@ -303,9 +399,10 @@ ReasoningPattern node:
   "tags": ["logic"],
   "importance": 0.70,
   "fields": {{
-    "trigger": "What activates this pattern",
-    "preferred_response": "What action follows",
-    "failure_mode": "What goes wrong when misapplied"
+    "trigger": "When [situation] occurs",
+    "preferred_response": "Then [action template]",
+    "failure_mode": "Misapplied when...",
+    "confidence_level": 0.75
   }}
 }}
 
@@ -315,11 +412,14 @@ LinguisticStyle node:
   "label": "Style name",
   "description": "Communication characteristics",
   "tags": ["tone"],
-  "importance": 0.60,
+  "importance": 0.65,
   "fields": {{
     "formality": "professional",
     "complexity": "moderate",
-    "example_phrases": ["phrase1", "phrase2"]
+    "directness": "direct",
+    "verbosity": "balanced",
+    "example_phrases": ["Let's explore...", "I'm curious about..."],
+    "affect_modulation": "Warmer when encouraging; neutral when correcting"
   }}
 }}
 
@@ -333,10 +433,11 @@ Your complete response (example):
       "tags": ["learning"],
       "importance": 0.85,
       "fields": {{
-        "worldview": "Challenges reveal capability",
-        "core_values": ["growth", "humility"],
+        "identity_statement": "I am an educator who believes challenges reveal capability",
+        "worldview": "Progress comes from iterative failure, not perfection",
+        "core_values": ["Embrace Failure", "Curiosity"],
         "communication_style": "socratic",
-        "evidence_strength": 0.75
+        "baseline_tone": "Calm and encouraging"
       }}
     }}
   ]
@@ -363,6 +464,16 @@ INSTRUCTIONS:
 - Rate weight from 0.0 (weak) to 1.0 (strong)
 - Provide brief evidence from text
 - Return ONLY valid JSON (no markdown, no code blocks, no explanatory text)
+
+AVAILABLE EDGE TYPES:
+- persona_has_value: Persona → Value
+- persona_has_drive: Persona → Drive
+- persona_uses_reasoning: Persona → ReasoningPattern
+- persona_has_style: Persona → LinguisticStyle
+- persona_constrained_by: Persona → Constraint
+- value_conflicts_with: Value ↔ Value
+- drive_blocked_by: Drive → Drive
+- reasoning_supports: ReasoningPattern → ReasoningPattern
 
 TEXT FOR CONTEXT:
 {chunk_text}
@@ -392,11 +503,19 @@ Example complete response:
     }},
     {{
       "source_id": "doc001-p001-c01-PER-01",
-      "target_id": "doc001-p001-c01-REA-01",
-      "relation": "persona_uses_reasoning",
-      "weight": 0.75,
+      "target_id": "doc001-p001-c01-DRV-01",
+      "relation": "persona_has_drive",
+      "weight": 0.80,
+      "confidence": 0.85,
+      "evidence": "Motivated by preventing student discouragement"
+    }},
+    {{
+      "source_id": "doc001-p001-c01-PER-01",
+      "target_id": "doc001-p001-c01-CON-01",
+      "relation": "persona_constrained_by",
+      "weight": 0.70,
       "confidence": 0.80,
-      "evidence": "Prefers iterative validation before scaling"
+      "evidence": "Limited to peer mentoring role"
     }}
   ]
 }}
@@ -652,9 +771,17 @@ Add a guardrail layer before any LLM calls:
 
 - **`scripts/validate_outputs.py`** (pure stdlib) reads `persona_schema.yaml`, then streams `examples/*.jsonl` or real outputs to ensure:
   - Required keys exist and match primitive types (string/float/list)
-  - IDs follow `doc-page-chunk-type-seq` format
+  - IDs follow `doc-page-chunk-type-seq` format with correct type codes (PER, CON, VAL, DRV, REA, LIN)
   - Edge references exist in `nodes.jsonl`
-  - Type-specific fields match schema requirements (e.g., Persona has worldview, Value has polarity)
+  - Edge relation types match one of the 8 defined relations
+  - Type-specific fields match schema requirements:
+    - Persona: identity_statement, worldview, core_values, communication_style, baseline_tone
+    - Constraint: role, capability_limits, environment_context, response_bounds
+    - Value: principle, behavioral_directive, application_context, strength, polarity
+    - Drive: goal_description, goal_type, motivation, active_conflict, stakes, priority
+    - ReasoningPattern: trigger, preferred_response, failure_mode, confidence_level
+    - LinguisticStyle: formality, complexity, directness, verbosity, example_phrases, affect_modulation
+  - Enum fields use only allowed values (e.g., communication_style must be directive/socratic/nurturing/analytical)
 - **Validation behavior**: Report ALL errors found, then exit with `sys.exit(1)` if any errors exist
 - Output format: Line-by-line error reporting with node/edge IDs and specific validation failures
 - Extend `config/run_config.yaml` with lightweight logging settings:
@@ -683,10 +810,10 @@ token_reporting:
 Before proceeding to Phase 1:
 
 - [ ] Directory structure matches spec
-- [ ] Schema YAML validates against cognitive ontology
+- [ ] Schema YAML validates against cognitive ontology (6 node types, 8 edge types)
 - [ ] Run config includes all parameters (no hardcoded values, token-based chunking)
-- [ ] Example JSONL files show all four node types with complete fields
-- [ ] Prompt templates use `{variables}` for injection and include schema examples
+- [ ] Example JSONL files show all six node types with complete fields (PER, CON, VAL, DRV, REA, LIN)
+- [ ] Prompt templates use `{variables}` for injection and include all 6 node schema examples
 - [ ] API reference shows Vercel AI Gateway with error handling
 - [ ] Python patterns doc references Module 10 learnings
 - [ ] Dependencies installed (`requirements.txt` includes tiktoken)
@@ -766,22 +893,37 @@ Identify intra-chunk relationships using the extracted nodes.
 
 ## Phase 4 — Persona Sheet Generation _(Priority: REQUIRED)_
 
-Traverse the graph to build a simple Mad-Libs persona sheet for validation/testing.
+Traverse the graph to build a deterministic Mad-Libs persona sheet for validation/testing.
 
 **What to do**
 - Load `nodes.jsonl` and `edges.jsonl` into in-memory dicts/lists.
-- Locate the highest-importance Persona node, gather connected Values/Reasoning/Styles.
-- Produce `persona_prompt.txt` summarizing worldview, values, reasoning patterns, and tone.
+- Locate the highest-importance Persona node, gather connected Constraints/Values/Drives/Reasoning/Styles.
+- Produce `persona_prompt.txt` by inserting node fields directly into template slots (no creative summarization).
 
 **Python Implementation Approach**
 1. Create `nodes_by_id = {node['id']: node for node in nodes}` and `edges_from = defaultdict(list)`.
 2. Identify Persona nodes via `[n for n in nodes if n['type'] == 'Persona']` and select by `max(..., key=lambda n: n.get('importance', 0))`.
-3. Traverse outgoing edges and collect target nodes by type using simple loops; keep everything in standard-library lists/dicts (no NetworkX or other graph libs).
-4. Render multiline f-string to produce the persona sheet; cap list lengths for readability.
+3. Traverse outgoing edges and collect target nodes by type:
+   - `persona_constrained_by` → Constraint nodes
+   - `persona_has_value` → Value nodes
+   - `persona_has_drive` → Drive nodes (sort by priority)
+   - `persona_uses_reasoning` → ReasoningPattern nodes
+   - `persona_has_style` → LinguisticStyle nodes
+4. Build persona sheet using deterministic template with field substitution:
+   - IDENTITY: `{Persona.identity_statement}`
+   - ROLE: `{Constraint.role}` + `{Constraint.environment_context}`
+   - BOUNDARIES: `{Constraint.capability_limits}` + `{Constraint.response_bounds}`
+   - WORLDVIEW: `{Persona.worldview}`
+   - VALUES: `{Value.label}: {Value.principle}` + `{Value.behavioral_directive}` + `{Value.application_context}`
+   - GOALS: `{Drive.goal_description}` + `{Drive.motivation}` + `{Drive.active_conflict}` + `{Drive.stakes}`
+   - REASONING: `{ReasoningPattern.label}: {ReasoningPattern.trigger} → {ReasoningPattern.preferred_response}`
+   - STYLE: `{LinguisticStyle fields}` + `{LinguisticStyle.affect_modulation}`
+   - TONE: `{Persona.baseline_tone}`
 5. Save to `outputs/persona_prompt.txt` and print a preview snippet.
 
 **Checks**
-- Persona sheet exists and matches ontology fields.
+- Persona sheet exists and matches Mad-Libs template structure.
+- All fields copied verbatim from nodes (no summarization).
 - Manual spot-check confirms content ties back to source nodes.
 
 ---
