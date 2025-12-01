@@ -29,6 +29,17 @@ phase3:
   max_reasoning: 3
   max_styles: 2
 
+# Parallel Processing
+parallel:
+  enabled: true
+  max_workers: 4  # Number of concurrent LLM calls (Phase 2 and Phase 3 local pass)
+
+# Transcription (Phase 0)
+transcription:
+  max_retries: 3                    # Retry failed chunks up to 3 times
+  failure_threshold_percent: 20     # Exit with error if failures exceed this %
+  chunk_cache_enabled: true         # Cache successful chunks to avoid re-transcription
+
 # Logging
 logging:
   level: "INFO"        # INFO for normal runs, DEBUG for troubleshooting

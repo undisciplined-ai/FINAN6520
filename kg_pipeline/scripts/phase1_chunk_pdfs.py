@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Phase 1: PDF Ingestion & Chunking
+Phase 1: Text Ingestion & Chunking
 
-Extracts text from PDFs and creates token-aware chunks with provenance metadata.
+Extracts text from PDFs or text files and creates token-aware chunks with provenance metadata.
 
 Usage:
     python scripts/phase1_chunk_pdfs.py input.pdf [input2.pdf ...]
+    python scripts/phase1_chunk_pdfs.py outputs/transcript.txt
     python scripts/phase1_chunk_pdfs.py pdfs/*.pdf
 """
 
@@ -18,9 +19,9 @@ import yaml
 
 try:
     import pdfplumber
+    PDFPLUMBER_AVAILABLE = True
 except ImportError:
-    print("Error: pdfplumber not installed. Run: pip install pdfplumber")
-    sys.exit(1)
+    PDFPLUMBER_AVAILABLE = False
 
 try:
     import tiktoken
@@ -168,7 +169,6 @@ def process_pdf(pdf_path: str, doc_num: int, config: Dict, output_file) -> int:
                         "page_id": page_id,
                         "chunk_id": chunk_id,
                         "text": chunk_content,
-                        "doc_name": pdf_name,
                         "page_num": page_num
                     }
                     
@@ -184,23 +184,76 @@ def process_pdf(pdf_path: str, doc_num: int, config: Dict, output_file) -> int:
     return total_chunks
 
 
+def process_text_file(text_path: str, doc_num: int, config: Dict, output_file) -> int:
+    """
+    Process a plain text file (e.g., from audio transcription) into chunks.
+    
+    Args:
+        text_path: Path to text file
+        doc_num: Document number for ID generation
+        config: Runtime configuration
+        output_file: Open file handle for output
+    
+    Returns:
+        Number of chunks created
+    """
+    doc_id = f"doc{doc_num:03d}"
+    doc_name = Path(text_path).stem
+    
+    logging.info(f"Processing {doc_name} as {doc_id}")
+    
+    # Read text file
+    with open(text_path, 'r', encoding='utf-8') as f:
+        text = f.read()
+    
+    if not text.strip():
+        logging.warning(f"  {doc_name} is empty, skipping")
+        return 0
+    
+    # Chunk the text
+    chunks = chunk_text(
+        text,
+        config['chunk_size'],
+        config['chunk_overlap'],
+        config['tokenizer']
+    )
+    
+    # Write chunks with provenance
+    total_chunks = 0
+    for chunk_id, text_chunk in enumerate(chunks, start=1):
+        chunk_data = {
+            'doc_id': doc_id,
+            'page_num': 1,  # Text files don't have pages
+            'page_id': f"p{1:03d}",
+            'chunk_id': f"c{chunk_id:02d}",
+            'text': text_chunk,
+            'token_count': count_tokens(text_chunk, config['tokenizer'])
+        }
+        
+        output_file.write(json.dumps(chunk_data) + '\n')
+        total_chunks += 1
+    
+    return total_chunks
+
+
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python scripts/phase1_chunk_pdfs.py <pdf_file> [pdf_file2 ...]")
+        print("Usage: python scripts/phase1_chunk_pdfs.py <input_file> [input_file2 ...]")
         print("Example: python scripts/phase1_chunk_pdfs.py pdfs/*.pdf")
+        print("Example: python scripts/phase1_chunk_pdfs.py outputs/transcript.txt")
         sys.exit(1)
     
     # Load configuration
     config = load_config()
     setup_logging(config)
     
-    pdf_files = sys.argv[1:]
+    input_files = sys.argv[1:]
     output_path = "outputs/chunks.jsonl"
     
     logging.info("="*60)
-    logging.info("Phase 1: PDF Ingestion & Chunking")
+    logging.info("Phase 1: Text Ingestion & Chunking")
     logging.info("="*60)
-    logging.info(f"PDFs to process: {len(pdf_files)}")
+    logging.info(f"Files to process: {len(input_files)}")
     logging.info(f"Chunk size: {config['chunk_size']} tokens")
     logging.info(f"Overlap: {config['chunk_overlap']} tokens")
     logging.info(f"Output: {output_path}")
@@ -209,23 +262,48 @@ def main():
     # Create output directory if needed
     Path("outputs").mkdir(exist_ok=True)
     
+    # Create document index mapping
+    document_index = {}
     total_chunks = 0
     
     with open(output_path, 'w') as output_file:
-        for doc_num, pdf_path in enumerate(pdf_files, start=1):
-            if not Path(pdf_path).exists():
-                logging.warning(f"File not found: {pdf_path}, skipping")
+        for doc_num, input_path in enumerate(input_files, start=1):
+            if not Path(input_path).exists():
+                logging.warning(f"File not found: {input_path}, skipping")
                 continue
             
-            chunks_created = process_pdf(pdf_path, doc_num, config, output_file)
+            # Detect file type
+            file_ext = Path(input_path).suffix.lower()
+            
+            # Store document mapping
+            doc_id = f"doc{doc_num:03d}"
+            document_index[doc_id] = str(Path(input_path).name)
+            
+            if file_ext == '.pdf':
+                if not PDFPLUMBER_AVAILABLE:
+                    logging.error("pdfplumber not installed. Run: pip install pdfplumber")
+                    sys.exit(1)
+                chunks_created = process_pdf(input_path, doc_num, config, output_file)
+            elif file_ext == '.txt':
+                chunks_created = process_text_file(input_path, doc_num, config, output_file)
+            else:
+                logging.warning(f"Unsupported file type: {file_ext}, skipping {input_path}")
+                continue
+            
             total_chunks += chunks_created
-            logging.info(f"  ✓ {Path(pdf_path).name}: {chunks_created} chunks")
+            logging.info(f"  ✓ {Path(input_path).name}: {chunks_created} chunks")
+    
+    # Write document index
+    index_path = "outputs/document_index.json"
+    with open(index_path, 'w') as f:
+        json.dump(document_index, f, indent=2)
     
     logging.info("")
     logging.info("="*60)
     logging.info(f"✅ Phase 1 Complete")
     logging.info(f"Total chunks created: {total_chunks}")
     logging.info(f"Output written to: {output_path}")
+    logging.info(f"Document index written to: {index_path}")
     logging.info("="*60)
     
     # Show sample of first few chunks

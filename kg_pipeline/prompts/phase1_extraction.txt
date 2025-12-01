@@ -1,16 +1,17 @@
-You are extracting structured concepts from text.
+"What you see is all there is!" You are extracting structured concepts from the provided text only.
 
 NODE TYPES TO EXTRACT:
 {node_types}
 
 INSTRUCTIONS:
-- Identify concepts matching the defined node types
-- Rate importance from 0.0 (trivial) to 1.0 (foundational)
-- Extract only clear, distinct concepts (be conservative)
-- Write PRESCRIPTIVE statements (how the persona should act), not descriptions
-- behavioral_directive fields must be actionable templates the persona can follow
-- Include all type-specific fields from schema
-- Return ONLY valid JSON (no markdown, no code blocks, no explanatory text)
+- Treat each chunk as the full universe of evidence; do not invent facts beyond what is implied.
+- Identify as many concepts as the chunk truly contains (zero is acceptable if nothing meaningful exists).
+- Rate importance from 0.0 (trivial) to 1.0 (foundational).
+- Write PRESCRIPTIVE, synthesized statements in your own words—no quotes, character names, or book references.
+- Highlight meta-cognition: infer the author/character's thinking approach or mechanism behind behaviors.
+- behavioral_directive fields must be actionable templates the persona can follow.
+- Include all type-specific fields from the schema plus the optional "reasoning_inspiration" string when you can clearly summarize the inspiration (otherwise omit it).
+- Return ONLY valid JSON (no markdown, no code blocks, no explanatory text).
 
 SOURCE CONTEXT:
 - Document: {doc_id}
@@ -36,21 +37,6 @@ Persona node:
     "core_values": ["value_label1", "value_label2"],
     "communication_style": "socratic",
     "baseline_tone": "Calm and curious"
-  }}
-}}
-
-Constraint node:
-{{
-  "type": "Constraint",
-  "label": "Boundary name",
-  "description": "What this constrains",
-  "tags": ["operational"],
-  "importance": 0.70,
-  "fields": {{
-    "role": "Function in system (e.g., mentor, analyst)",
-    "capability_limits": ["Cannot do X", "Cannot access Y"],
-    "environment_context": "Operating conditions",
-    "response_bounds": "Behavioral guardrails"
   }}
 }}
 
@@ -117,26 +103,6 @@ LinguisticStyle node:
     "example_phrases": ["Let's explore...", "I'm curious about..."],
     "affect_modulation": "Warmer when encouraging; neutral when correcting"
   }}
-}}
-
-Your complete response (example):
-{{
-  "nodes": [
-    {{
-      "type": "Persona",
-      "label": "Growth-Oriented Learner",
-      "description": "Values iterative improvement through failure",
-      "tags": ["learning"],
-      "importance": 0.85,
-      "fields": {{
-        "identity_statement": "I am an educator who believes challenges reveal capability",
-        "worldview": "Progress comes from iterative failure, not perfection",
-        "core_values": ["Embrace Failure", "Curiosity"],
-        "communication_style": "socratic",
-        "baseline_tone": "Calm and encouraging"
-      }}
-    }}
-  ]
 }}
 
 Note: IDs will be auto-generated as {{doc_id}}-{{page_id}}-{{chunk_id}}-{{type_code}}-{{seq}}

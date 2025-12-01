@@ -8,14 +8,6 @@ node_types:
       core_values: list[string]
       communication_style: enum[directive, socratic, nurturing, analytical]
       baseline_tone: string
-  Constraint:
-    code: "CON"
-    description: "Operational boundaries and context"
-    fields:
-      role: string
-      capability_limits: list[string]
-      environment_context: string
-      response_bounds: string
   Value:
     code: "VAL"
     description: "Prescriptive principle with behavioral directive"
@@ -63,8 +55,6 @@ edge_types:
     description: "Links persona to preferred reasoning pattern"
   - name: "persona_has_style"
     description: "Links persona to linguistic style"
-  - name: "persona_constrained_by"
-    description: "Links persona to operational boundaries"
   - name: "value_conflicts_with"
     description: "Two values in tension"
   - name: "drive_blocked_by"
@@ -78,6 +68,7 @@ node_common_fields:
   - type: string         # One of node_types above
   - label: string        # Brief concept label
   - description: string  # Clear description
+  - reasoning_inspiration: optional[string]  # Optional meta-cognitive summary of what in the text inspired this node
   - tags: list[string]   # Categorization
   - importance: float    # 0.0-1.0
   - provenance:

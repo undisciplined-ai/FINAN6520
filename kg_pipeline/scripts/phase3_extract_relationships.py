@@ -22,6 +22,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Any
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import yaml
 
 
@@ -461,66 +462,118 @@ def main():
     edge_type_counts = defaultdict(int)
     seen_edges = set()  # Track (source_id, target_id, relation) to deduplicate
     
+    parallel_config = config.get('parallel', {})
+    parallel_enabled = parallel_config.get('enabled', False)
+    max_workers = parallel_config.get('max_workers', 4)
+    
     output_path = "outputs/edges.jsonl"
-    with open(output_path, 'w') as output_file:
-        for i, (chunk_key, nodes) in enumerate(sorted(nodes_by_chunk.items()), 1):
-            logging.info(f"Processing chunk {i}/{len(nodes_by_chunk)}: {chunk_key} ({len(nodes)} nodes)")
-            
-            if chunk_key not in chunks:
-                logging.warning(f"Chunk {chunk_key} not found in chunks.jsonl, skipping")
-                continue
-            
-            chunk = chunks[chunk_key]
-            edges = process_chunk(chunk_key, nodes, chunk, schema, prompt_template, config)
-            
-            # Deduplicate and write edges to file
-            new_edges = 0
-            for edge in edges:
-                edge_key = (edge['source_id'], edge['target_id'], edge['relation'])
-                if edge_key not in seen_edges:
-                    seen_edges.add(edge_key)
-                    output_file.write(json.dumps(edge) + '\n')
-                    all_edges.append(edge)
-                    edge_type_counts[edge['relation']] += 1
-                    new_edges += 1
-            
-            logging.info(f"  ✓ Extracted {new_edges} edge(s) ({len(edges) - new_edges} duplicates filtered)")
+    
+    if parallel_enabled:
+        logging.info(f"Using parallel processing with {max_workers} workers")
         
-        # Pass 2: Global relationships (cross-chunk for high-importance nodes)
-        logging.info("")
-        logging.info("Pass 2: Extracting global relationships (cross-chunk)...")
+        chunk_items = sorted(nodes_by_chunk.items())
         
-        # Get high-importance nodes across all chunks
-        importance_threshold = config.get('phase2', {}).get('importance_threshold', 0.7)
-        high_importance_nodes = [n for n in canonical_nodes if n['importance'] >= importance_threshold]
-        
-        if len(high_importance_nodes) >= 2:
-            logging.info(f"Found {len(high_importance_nodes)} high-importance nodes (threshold: {importance_threshold})")
-            
-            # Create a virtual "global" context with all high-importance nodes
-            # Use combined text from their source chunks as context
-            global_context_chunks = []
-            for node in high_importance_nodes:
-                if isinstance(node['provenance'], list):
-                    prov = node['provenance'][0]
-                else:
-                    prov = node['provenance']
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all chunks for local pass
+            future_to_chunk = {}
+            for chunk_key, nodes in chunk_items:
+                if chunk_key not in chunks:
+                    logging.warning(f"Chunk {chunk_key} not found in chunks.jsonl, skipping")
+                    continue
                 
-                chunk_key = f"{prov['doc_id']}-{prov['page_num']:03d}-{prov['chunk_id']}"
-                if chunk_key in chunks:
-                    global_context_chunks.append(chunks[chunk_key]['text'])
+                chunk = chunks[chunk_key]
+                future = executor.submit(process_chunk, chunk_key, nodes, chunk, schema, prompt_template, config)
+                future_to_chunk[future] = (chunk_key, len(nodes))
             
-            # Combine context (limit to reasonable size)
-            global_context = "\n\n...\n\n".join(global_context_chunks[:5])  # Max 5 chunks
+            # Collect results as they complete and deduplicate
+            with open(output_path, 'w') as output_file:
+                completed = 0
+                for future in as_completed(future_to_chunk):
+                    chunk_key, node_count = future_to_chunk[future]
+                    completed += 1
+                    
+                    try:
+                        edges = future.result()
+                        
+                        # Deduplicate and write edges
+                        new_edges = 0
+                        for edge in edges:
+                            edge_key = (edge['source_id'], edge['target_id'], edge['relation'])
+                            if edge_key not in seen_edges:
+                                seen_edges.add(edge_key)
+                                output_file.write(json.dumps(edge) + '\n')
+                                all_edges.append(edge)
+                                edge_type_counts[edge['relation']] += 1
+                                new_edges += 1
+                        
+                        dup_count = len(edges) - new_edges
+                        logging.info(f"[{completed}/{len(future_to_chunk)}] ✓ {chunk_key}: {new_edges} edge(s) ({dup_count} duplicates)")
+                    except Exception as e:
+                        logging.error(f"[{completed}/{len(future_to_chunk)}] ✗ {chunk_key}: {e}")
+    else:
+        logging.info("Using sequential processing")
+        
+        with open(output_path, 'w') as output_file:
+            for i, (chunk_key, nodes) in enumerate(sorted(nodes_by_chunk.items()), 1):
+                logging.info(f"Processing chunk {i}/{len(nodes_by_chunk)}: {chunk_key} ({len(nodes)} nodes)")
+                
+                if chunk_key not in chunks:
+                    logging.warning(f"Chunk {chunk_key} not found in chunks.jsonl, skipping")
+                    continue
+                
+                chunk = chunks[chunk_key]
+                edges = process_chunk(chunk_key, nodes, chunk, schema, prompt_template, config)
+                
+                # Deduplicate and write edges to file
+                new_edges = 0
+                for edge in edges:
+                    edge_key = (edge['source_id'], edge['target_id'], edge['relation'])
+                    if edge_key not in seen_edges:
+                        seen_edges.add(edge_key)
+                        output_file.write(json.dumps(edge) + '\n')
+                        all_edges.append(edge)
+                        edge_type_counts[edge['relation']] += 1
+                        new_edges += 1
+                
+                logging.info(f"  ✓ Extracted {new_edges} edge(s) ({len(edges) - new_edges} duplicates filtered)")
+    
+    # Pass 2: Global relationships (cross-chunk for high-importance nodes)
+    # This runs AFTER local pass completes (regardless of parallel/sequential mode)
+    logging.info("")
+    logging.info("Pass 2: Extracting global relationships (cross-chunk)...")
+    
+    # Get high-importance nodes across all chunks
+    importance_threshold = config.get('phase2', {}).get('importance_threshold', 0.7)
+    high_importance_nodes = [n for n in canonical_nodes if n['importance'] >= importance_threshold]
+    
+    if len(high_importance_nodes) >= 2:
+        logging.info(f"Found {len(high_importance_nodes)} high-importance nodes (threshold: {importance_threshold})")
+        
+        # Create a virtual "global" context with all high-importance nodes
+        # Use combined text from their source chunks as context
+        global_context_chunks = []
+        for node in high_importance_nodes:
+            if isinstance(node['provenance'], list):
+                prov = node['provenance'][0]
+            else:
+                prov = node['provenance']
             
-            # Create pseudo-chunk for global extraction
-            pseudo_chunk = {
-                'text': global_context
-            }
-            
-            global_edges = process_chunk('global', high_importance_nodes, pseudo_chunk, schema, prompt_template, config)
-            
-            # Deduplicate and write global edges
+            chunk_key = f"{prov['doc_id']}-{prov['page_num']:03d}-{prov['chunk_id']}"
+            if chunk_key in chunks:
+                global_context_chunks.append(chunks[chunk_key]['text'])
+        
+        # Combine context (limit to reasonable size)
+        global_context = "\n\n...\n\n".join(global_context_chunks[:5])  # Max 5 chunks
+        
+        # Create pseudo-chunk for global extraction
+        pseudo_chunk = {
+            'text': global_context
+        }
+        
+        global_edges = process_chunk('global', high_importance_nodes, pseudo_chunk, schema, prompt_template, config)
+        
+        # Deduplicate and write global edges (append mode since file was closed after local pass)
+        with open(output_path, 'a') as output_file:
             new_edges = 0
             for edge in global_edges:
                 edge_key = (edge['source_id'], edge['target_id'], edge['relation'])
@@ -530,10 +583,10 @@ def main():
                     all_edges.append(edge)
                     edge_type_counts[edge['relation']] += 1
                     new_edges += 1
-            
-            logging.info(f"  ✓ Extracted {new_edges} cross-chunk edge(s) ({len(global_edges) - new_edges} duplicates filtered)")
-        else:
-            logging.info(f"Skipping global pass: only {len(high_importance_nodes)} high-importance nodes")
+        
+        logging.info(f"  ✓ Extracted {new_edges} cross-chunk edge(s) ({len(global_edges) - new_edges} duplicates filtered)")
+    else:
+        logging.info(f"Skipping global pass: only {len(high_importance_nodes)} high-importance nodes")
     
     # Summary
     logging.info("")

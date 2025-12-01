@@ -22,6 +22,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Any
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import yaml
 
 
@@ -234,7 +235,6 @@ def process_chunk(chunk: Dict, schema: Dict, prompt_template: str, config: Dict)
         node['id'] = node_id
         node['provenance'] = {
             'doc_id': chunk['doc_id'],
-            'doc_name': chunk['doc_name'],
             'page_num': chunk['page_num'],
             'chunk_id': chunk['chunk_id'],
             'extraction_phase': 'phase2'
@@ -286,25 +286,62 @@ def main():
     logging.info(f"Output: outputs/nodes.jsonl")
     logging.info("")
     
-    # Process chunks
+    # Process chunks (parallel or sequential based on config)
     all_nodes = []
     node_type_counts = defaultdict(int)
     
+    parallel_config = config.get('parallel', {})
+    parallel_enabled = parallel_config.get('enabled', False)
+    max_workers = parallel_config.get('max_workers', 4)
+    
     output_path = "outputs/nodes.jsonl"
-    with open(output_path, 'w') as output_file:
-        for i, chunk in enumerate(chunks, 1):
-            chunk_label = f"{chunk['doc_id']}-{chunk['page_id']}-{chunk['chunk_id']}"
-            logging.info(f"Processing chunk {i}/{len(chunks)}: {chunk_label}")
+    
+    if parallel_enabled:
+        logging.info(f"Using parallel processing with {max_workers} workers")
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all chunks
+            future_to_chunk = {}
+            for chunk in chunks:
+                future = executor.submit(process_chunk, chunk, schema, prompt_template, config)
+                future_to_chunk[future] = chunk
             
-            nodes = process_chunk(chunk, schema, prompt_template, config)
-            
-            # Write nodes to file
-            for node in nodes:
-                output_file.write(json.dumps(node) + '\n')
-                all_nodes.append(node)
-                node_type_counts[node['type']] += 1
-            
-            logging.info(f"  ✓ Extracted {len(nodes)} node(s)")
+            # Collect results as they complete
+            with open(output_path, 'w') as output_file:
+                completed = 0
+                for future in as_completed(future_to_chunk):
+                    chunk = future_to_chunk[future]
+                    chunk_label = f"{chunk['doc_id']}-{chunk['page_id']}-{chunk['chunk_id']}"
+                    completed += 1
+                    
+                    try:
+                        nodes = future.result()
+                        logging.info(f"[{completed}/{len(chunks)}] ✓ {chunk_label}: {len(nodes)} node(s)")
+                        
+                        # Write nodes to file
+                        for node in nodes:
+                            output_file.write(json.dumps(node) + '\n')
+                            all_nodes.append(node)
+                            node_type_counts[node['type']] += 1
+                    except Exception as e:
+                        logging.error(f"[{completed}/{len(chunks)}] ✗ {chunk_label}: {e}")
+    else:
+        logging.info("Using sequential processing")
+        
+        with open(output_path, 'w') as output_file:
+            for i, chunk in enumerate(chunks, 1):
+                chunk_label = f"{chunk['doc_id']}-{chunk['page_id']}-{chunk['chunk_id']}"
+                logging.info(f"Processing chunk {i}/{len(chunks)}: {chunk_label}")
+                
+                nodes = process_chunk(chunk, schema, prompt_template, config)
+                
+                # Write nodes to file
+                for node in nodes:
+                    output_file.write(json.dumps(node) + '\n')
+                    all_nodes.append(node)
+                    node_type_counts[node['type']] += 1
+                
+                logging.info(f"  ✓ Extracted {len(nodes)} node(s)")
     
     # Summary
     logging.info("")

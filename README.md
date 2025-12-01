@@ -87,3 +87,56 @@ We follow a consistent, repeatable process every week.
 - For any ambiguity in expected output, rely on the breadcrumbs printout.
 - Validate frequently: run breadcrumbs and the checker after each set of changes.
 - If you hit a data-source variability issue, propose two options: normalize function output vs relax the checker (document which one you choose).
+
+## Knowledge Graph Persona Pipeline
+
+An experimental knowledge-graph persona generator lives in `kg_pipeline/`. You can run the full pipeline (PDF → chunks → nodes → canonical graph → edges → persona sheet → dynamic persona selection → affective governance) with one command:
+
+```bash
+cd kg_pipeline
+python scripts/run_pipeline.py --pdf /path/to/persona.pdf --message "Describe what's blocking you"
+```
+
+### Key Flags
+
+- `--pdf`: One or more PDF paths (supports globbing like `--pdf pdfs/*.pdf`).
+- `--message` (optional): User utterance used by Phases 4b/4c. Omit to stop after persona sheet generation.
+- `--clean`: Wipe `kg_pipeline/outputs/` before running so results don't mix across documents.
+- `--max-delta`: Override the affective governor's max delta (default `0.3`).
+
+### Performance Configuration
+
+The pipeline supports parallel processing for faster execution on large documents. Configure in `kg_pipeline/config/run_config.yaml`:
+
+```yaml
+parallel:
+  enabled: true      # Set to false for sequential processing
+  max_workers: 4     # Number of concurrent LLM calls
+```
+
+**Performance Impact (300-page PDF example):**
+- Sequential: ~16 minutes (192 LLM calls @ 5s each)
+- Parallel (4 workers): ~4.7 minutes (70% speedup)
+
+Parallel processing applies to:
+- **Phase 2 (Node Extraction)**: Each chunk processed independently
+- **Phase 3 (Local Relationships)**: Each chunk-pair processed independently
+- **Phase 3 (Global Relationships)**: Always sequential (requires cross-chunk context)
+
+### Prerequisites
+
+- `.env` inside `kg_pipeline/` containing `AI_GATEWAY_API_KEY=<your Vercel AI Gateway key>`.
+- Python deps (e.g., `pdfplumber`, `tiktoken`, `pyyaml`) plus Node.js dependencies installed via `npm install` in `kg_pipeline/`.
+
+### Outputs
+
+Results land in `kg_pipeline/outputs/`:
+- `chunks.jsonl`: Text chunks with token counts
+- `nodes.jsonl`: Extracted nodes (pre-entity-resolution)
+- `nodes_canonical.jsonl`: Deduplicated nodes with merged provenance
+- `entity_mapping.json`: Original ID → canonical ID mappings
+- `edges.jsonl`: Relationships between nodes
+- `persona_sheet.json`: Aggregated persona characteristics
+- `selected_nodes.json`: Context-relevant nodes for current message (Phase 4b)
+- `affective_persona.json`: Governed persona with affective constraints (Phase 4c)
+- `conversation_history.jsonl`: Message history with selections

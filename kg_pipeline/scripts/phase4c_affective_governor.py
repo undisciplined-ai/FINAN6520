@@ -127,14 +127,24 @@ def calculate_affective_state(selections: Dict, persona_sheet: Dict) -> Dict[str
         elif 'serious' in affect_text or 'firm' in affect_text:
             state['warmth'] = 0.3
     
-    # Adjust intensity based on sentiment and node importance
-    sentiment = selections['metadata']['sentiment']
-    if sentiment['negative'] > 0.2:
-        state['intensity'] = 0.7  # More intense when user struggling
-    elif sentiment['positive'] > 0.2:
-        state['intensity'] = 0.6  # Moderately intense when excited
+    # Adjust intensity and affect based on LLM assessment (Phase 4b output)
+    llm_assessment = selections['metadata'].get('llm_assessment', {})
+    
+    # Use LLM's recommended warmth and directness if available
+    if 'recommended_warmth' in llm_assessment:
+        state['warmth'] = llm_assessment['recommended_warmth']
+    
+    if 'recommended_directness' in llm_assessment:
+        state['directness'] = llm_assessment['recommended_directness']
+    
+    # Infer intensity from user emotion (higher intensity for negative emotions)
+    user_emotion = llm_assessment.get('user_emotion', 'neutral').lower()
+    if any(word in user_emotion for word in ['struggle', 'frustrat', 'confus', 'anxious', 'discourag']):
+        state['intensity'] = 0.7
+    elif any(word in user_emotion for word in ['excit', 'eager', 'interest', 'curious']):
+        state['intensity'] = 0.6
     else:
-        state['intensity'] = 0.4  # Lower intensity for neutral exchanges
+        state['intensity'] = 0.4
     
     return state
 

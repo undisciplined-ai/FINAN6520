@@ -104,7 +104,7 @@ def validate_node(node: Dict, schema: Dict) -> List[str]:
     # Validate provenance fields
     if 'provenance' in node:
         prov = node['provenance']
-        required_prov = ['doc_id', 'doc_name', 'page_num', 'chunk_id', 'extraction_phase']
+        required_prov = ['doc_id', 'page_num', 'chunk_id', 'extraction_phase']
         for field in required_prov:
             if field not in prov:
                 errors.append(f"Node {node['id']} missing provenance field: {field}")

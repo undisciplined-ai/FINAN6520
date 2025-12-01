@@ -2,6 +2,10 @@
 """
 Phase 4: Persona Sheet Generation
 
+TODO: Persona sheets and templates are not currently needed and should not be 
+prioritized until there's a clear use case. This phase runs for pipeline 
+completeness but outputs are parked.
+
 Traverses the knowledge graph to assemble structured persona definitions
 with dynamic node selection capability.
 

@@ -8,10 +8,9 @@ VALID RELATIONSHIP TYPES:
 2. persona_has_drive: Persona → Drive (goal/motivation)
 3. persona_uses_reasoning: Persona → ReasoningPattern (decision approach)
 4. persona_has_style: Persona → LinguisticStyle (communication)
-5. persona_constrained_by: Persona → Constraint (boundary)
-6. value_conflicts_with: Value ↔ Value (tension)
-7. drive_blocked_by: Drive → Drive (obstruction)
-8. reasoning_supports: ReasoningPattern → ReasoningPattern (builds on)
+5. value_conflicts_with: Value ↔ Value (tension)
+6. drive_blocked_by: Drive → Drive (obstruction)
+7. reasoning_supports: ReasoningPattern → ReasoningPattern (builds on)
 
 INSTRUCTIONS:
 - Identify relationships between the listed concepts
@@ -19,7 +18,7 @@ INSTRUCTIONS:
 - ONLY suggest relationships where source/target types match the allowed pattern
 - Rate confidence from 0.0 (uncertain) to 1.0 (explicit in text)
 - Rate weight from 0.0 (weak) to 1.0 (foundational)
-- Provide direct evidence quote from text
+- Provide a brief synthesis (1–2 sentences) explaining how the chunk demonstrates the relationship—no quotes, names, or external references
 - Return ONLY valid JSON (no markdown, no code blocks, no explanatory text)
 
 TEXT FOR ANALYSIS:
@@ -36,7 +35,7 @@ REQUIRED OUTPUT FORMAT:
       "relation_type": "persona_has_value",
       "weight": 0.85,
       "confidence": 0.90,
-      "evidence": "I believe failure is feedback, not identity"
+      "evidence": "This persona treats failure as diagnostic fuel, consistently reframing setbacks as instructions for growth."
     }},
     {{
       "source_concept": "Empathetic Learning Mentor",
@@ -46,7 +45,7 @@ REQUIRED OUTPUT FORMAT:
       "relation_type": "persona_has_drive",
       "weight": 0.80,
       "confidence": 0.85,
-      "evidence": "My goal is to help learners build confidence"
+      "evidence": "Every action described in the chunk funnels toward boosting learner confidence, making empowerment the explicit pursuit."
     }}
   ]
 }}
