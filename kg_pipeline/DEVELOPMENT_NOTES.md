@@ -2,6 +2,15 @@
 
 Date: 2025-12-01
 
+## Overview: Purpose, Functionality, Intent
+- Purpose: Convert long-form media (audio/PDF/text) into a cohesive knowledge graph and persona artifacts to enable richer, context-aware interactions and evaluation of persona performance.
+- Functionality: 
+  - Phase 0–1: Transcribe/ingest and chunk content for LLM-friendly processing.
+  - Phase 2–3: Extract entities (nodes), relationships (edges), and resolve canonical identities across sources.
+  - Phase 4: Generate structured persona sheets (values, motivations, reasoning styles) informed by KG evidence.
+  - Config-driven runs: Models, prompts, and thresholds set via `config/run_config.yaml`; parallelization and token reporting included.
+- Intent: Build a high-signal, durable KG that supports adaptive prompting and persona evaluation, emphasizing clarity, consistency, and cross-book alignment while controlling cost.
+
 Purpose: Capture decisions and plan for building a cohesive knowledge graph (KG) focused on persona creation and evaluation, including a Discworld-heavy corpus and a staged rollout under a $2/book budget.
 
 ## Pilot Corpus Strategy
