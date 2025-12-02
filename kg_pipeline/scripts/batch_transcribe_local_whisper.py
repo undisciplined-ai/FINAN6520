@@ -358,9 +358,27 @@ class BatchTranscriberLocal:
         
         # Phase 3: Transcribe - single-threaded for GPU efficiency
         start_time = time.time()
+        chunks_since_cleanup = 0
+        
         for task in all_tasks:
-            book_name, chunk_index, success, transcript = self.transcribe_chunk(task)
-            self.update_progress(book_name, chunk_index, success, transcript)
+            try:
+                book_name, chunk_index, success, transcript = self.transcribe_chunk(task)
+                self.update_progress(book_name, chunk_index, success, transcript)
+                chunks_since_cleanup += 1
+                
+                # Periodic GPU memory cleanup (every 50 chunks to prevent memory leaks)
+                if chunks_since_cleanup >= 50:
+                    import gc
+                    import torch
+                    gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    chunks_since_cleanup = 0
+                    
+            except Exception as e:
+                # Log error but continue with next chunk
+                logging.error(f"Failed to transcribe {task.book_name} chunk {task.chunk_index}: {e}")
+                self.update_progress(task.book_name, task.chunk_index, False, "")
         
         elapsed = time.time() - start_time
         logging.info(f"\n⏱️  Total transcription time: {elapsed/60:.1f} minutes ({elapsed/3600:.2f} hours)")
@@ -392,10 +410,25 @@ class BatchTranscriberLocal:
         logging.info("Batch Transcription Complete")
         logging.info("="*60)
         
+        successful_books = 0
+        partial_books = 0
+        failed_books = 0
+        
         for book_name, progress in self.progress_map.items():
-            status = "✅" if progress.success_rate == 100 else "⚠️"
+            if progress.success_rate == 100.0:
+                status = "✅"
+                successful_books += 1
+            elif progress.success_rate > 0:
+                status = "⚠️"
+                partial_books += 1
+            else:
+                status = "❌"
+                failed_books += 1
+            
             logging.info(f"{status} {book_name}: {progress.success_rate:.1f}% success")
         
+        logging.info("="*60)
+        logging.info(f"📊 Summary: {successful_books} complete | {partial_books} partial | {failed_books} failed")
         logging.info("="*60)
 
 
