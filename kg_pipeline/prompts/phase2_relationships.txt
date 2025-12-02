@@ -15,7 +15,7 @@ INSTRUCTIONS:
 - Any node type can relate to any other node type—use your judgment based on the text
 - Rate confidence from 0.0 (uncertain) to 1.0 (explicit in text)
 - Rate weight from 0.0 (weak) to 1.0 (foundational)
-- Provide a brief synthesis (1–2 sentences) explaining how the chunk demonstrates the relationship—no quotes, names, or external references
+- **EVIDENCE FIELD**: Write the evidence as a short, conceptual rationale that explains why the two abstract nodes naturally align or oppose each other. Use generalized reasoning, metaphor, or psychological principles only—no references to specific events, characters, or real-world situations.
 - Return ONLY valid JSON (no markdown, no code blocks, no explanatory text)
 
 TEXT FOR ANALYSIS:

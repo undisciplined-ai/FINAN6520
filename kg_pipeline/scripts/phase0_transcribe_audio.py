@@ -363,9 +363,11 @@ def transcribe_audio_parallel(chunk_paths: List[str], audio_path: str, max_worke
                     cache_marker = " (cached)" if result.get('cached') else ""
                     if result.get('cached'):
                         cached += 1
-                    logging.info(f"[{completed}/{len(chunks_to_process)}] ✓ Chunk {chunk_index}: {len(result['transcript'])} chars{cache_marker}")
+                    pct = (completed / len(chunks_to_process)) * 100
+                    logging.info(f"[{completed}/{len(chunks_to_process)} | {pct:.0f}%] ✓ Chunk {chunk_index}: {len(result['transcript'])} chars{cache_marker}")
                 else:
-                    logging.error(f"[{completed}/{len(chunks_to_process)}] ✗ Chunk {chunk_index}: {result.get('error', 'Unknown error')}")
+                    pct = (completed / len(chunks_to_process)) * 100
+                    logging.error(f"[{completed}/{len(chunks_to_process)} | {pct:.0f}%] ✗ Chunk {chunk_index}: {result.get('error', 'Unknown error')}")
                 
                 # Log progress every 30 seconds
                 current_time = time.time()

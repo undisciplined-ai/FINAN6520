@@ -224,8 +224,8 @@ def process_text_file(text_path: str, doc_num: int, config: Dict, output_file) -
     for chunk_id, text_chunk in enumerate(chunks, start=1):
         chunk_data = {
             'doc_id': doc_id,
-            'page_num': 1,  # Text files don't have pages
-            'page_id': f"p{1:03d}",
+            'page_num': chunk_id,  # For text files, use chunk number as page reference
+            'page_id': f"p{chunk_id:03d}",
             'chunk_id': f"c{chunk_id:02d}",
             'text': text_chunk,
             'token_count': count_tokens(text_chunk, config['tokenizer'])

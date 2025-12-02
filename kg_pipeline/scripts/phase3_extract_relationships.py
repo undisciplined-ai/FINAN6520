@@ -26,6 +26,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import yaml
 import time
 
+# Import importance sampling utilities
+sys.path.insert(0, str(Path(__file__).parent))
+from importance_sampler import sample_nodes_by_importance
+
 
 def load_manifest(manifest_path: str = "outputs/.manifest.json") -> Dict:
     """Load processing manifest."""
@@ -481,6 +485,23 @@ def main():
     # Pass 1: Local relationships (within chunks)
     logging.info("")
     logging.info("Pass 1: Extracting local relationships (within-chunk)...")
+    
+    # Apply importance-based sampling to nodes
+    logging.info("Applying importance-based bucket sampling to nodes...")
+    all_nodes_flat = [node for nodes_list in nodes_by_chunk.values() for node in nodes_list]
+    sampled_nodes_flat = sample_nodes_by_importance(all_nodes_flat, config, seed=42, verbose=True)
+    sampled_node_ids = {node['id'] for node in sampled_nodes_flat}
+    
+    # Filter nodes_by_chunk to only include sampled nodes
+    nodes_by_chunk_sampled = {}
+    for chunk_key, nodes in nodes_by_chunk.items():
+        sampled = [n for n in nodes if n['id'] in sampled_node_ids]
+        if sampled:  # Only include chunks with at least one sampled node
+            nodes_by_chunk_sampled[chunk_key] = sampled
+    
+    logging.info(f"After sampling: {len(nodes_by_chunk_sampled)} chunks with {len(sampled_nodes_flat)} nodes")
+    logging.info("")
+    
     all_edges = []
     edge_type_counts = defaultdict(int)
     seen_edges = set()  # Track (source_id, target_id, relation) to deduplicate
@@ -545,15 +566,18 @@ def main():
                         processed_chunks_set.add(chunk_key)
                         
                         dup_count = len(edges) - new_edges
-                        logging.info(f"[{completed}/{len(future_to_chunk)}] ✓ {chunk_key}: {new_edges} edge(s) ({dup_count} duplicates)")
+                        pct = (completed / len(future_to_chunk)) * 100
+                        logging.info(f"[{completed}/{len(future_to_chunk)} | {pct:.0f}%] ✓ {chunk_key}: {new_edges} edge(s) ({dup_count} duplicates)")
                     except Exception as e:
-                        logging.error(f"[{completed}/{len(future_to_chunk)}] ✗ {chunk_key}: {e}")
+                        pct = (completed / len(future_to_chunk)) * 100
+                        logging.error(f"[{completed}/{len(future_to_chunk)} | {pct:.0f}%] ✗ {chunk_key}: {e}")
     else:
         logging.info("Using sequential processing")
         
         with open(output_path, 'a') as output_file:
-            for i, (chunk_key, nodes) in enumerate(sorted(nodes_by_chunk.items()), 1):
-                logging.info(f"Processing chunk {i}/{len(nodes_by_chunk)}: {chunk_key} ({len(nodes)} nodes)")
+            for i, (chunk_key, nodes) in enumerate(sorted(nodes_by_chunk_sampled.items()), 1):
+                pct = (i / len(nodes_by_chunk)) * 100
+                logging.info(f"[{i}/{len(nodes_by_chunk)} | {pct:.0f}%] Processing {chunk_key} ({len(nodes)} nodes)")
                 
                 if chunk_key not in chunks:
                     logging.warning(f"Chunk {chunk_key} not found in chunks.jsonl, skipping")
@@ -576,24 +600,28 @@ def main():
                 # Track in manifest
                 processed_chunks_set.add(chunk_key)
                 
-                logging.info(f"  ✓ Extracted {new_edges} edge(s) ({len(edges) - new_edges} duplicates filtered)")
+                logging.info(f"  ✓ {new_edges} edge(s) ({len(edges) - new_edges} duplicates filtered)")
     
     # Pass 2: Global relationships (cross-chunk for high-importance nodes)
     # This runs AFTER local pass completes (regardless of parallel/sequential mode)
     logging.info("")
     logging.info("Pass 2: Extracting global relationships (cross-chunk)...")
     
-    # Get high-importance nodes across all chunks
-    importance_threshold = config.get('phase2', {}).get('importance_threshold', 0.7)
-    high_importance_nodes = [n for n in canonical_nodes if n['importance'] >= importance_threshold]
+    # Apply importance-based sampling for global relationships
+    # Only use top buckets (9-10) for cross-chunk analysis to limit API calls
+    global_nodes = [n for n in canonical_nodes if n['importance'] >= 0.80]
+    logging.info(f"Pre-filtered {len(global_nodes)} nodes with importance >= 0.80 for global analysis")
     
-    if len(high_importance_nodes) >= 2:
-        logging.info(f"Found {len(high_importance_nodes)} high-importance nodes (threshold: {importance_threshold})")
+    # Further sample using bucket system
+    global_sampled = sample_nodes_by_importance(global_nodes, config, seed=42, verbose=False)
+    
+    if len(global_sampled) >= 2:
+        logging.info(f"Using {len(global_sampled)} sampled high-importance nodes for global relationships")
         
-        # Create a virtual "global" context with all high-importance nodes
+        # Create a virtual "global" context with sampled high-importance nodes
         # Use combined text from their source chunks as context
         global_context_chunks = []
-        for node in high_importance_nodes:
+        for node in global_sampled:
             if isinstance(node['provenance'], list):
                 prov = node['provenance'][0]
             else:
@@ -611,7 +639,7 @@ def main():
             'text': global_context
         }
         
-        global_edges = process_chunk('global', high_importance_nodes, pseudo_chunk, schema, prompt_template, config)
+        global_edges = process_chunk('global', global_sampled, pseudo_chunk, schema, prompt_template, config)
         
         # Deduplicate and write global edges (append mode since file was closed after local pass)
         with open(output_path, 'a') as output_file:

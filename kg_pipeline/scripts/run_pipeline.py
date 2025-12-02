@@ -3,15 +3,15 @@
 End-to-end Knowledge Graph Pipeline Runner
 
 Usage:
-    python scripts/run_pipeline.py --input /path/to/file.pdf --message "Help me"
-    python scripts/run_pipeline.py --input /path/to/audiobook.m4b --message "Help me"
-    python scripts/run_pipeline.py --input /path/to/input_folder --message "Help me"
+    python scripts/run_pipeline.py --input /path/to/file.pdf
+    python scripts/run_pipeline.py --input /path/to/audiobook.m4b
+    python scripts/run_pipeline.py --input /path/to/input_folder
 
 Features:
     - Optional cleanup of outputs directory before running
-    - Sequential execution of Phases 0 through 4 (Phase 0 for audio files)
-    - Optional execution of Phase 4b (LLM node selection) and Phase 4c (affective governor)
-    - Supports PDF and M4B audiobook inputs
+    - Sequential execution of Phases 0 through 3 (Phase 0 for audio files)
+    - Automatic backups after each phase
+    - Supports PDF, TXT, and M4B audiobook inputs
 """
 
 import argparse
@@ -21,6 +21,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import List
+from datetime import datetime
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = BASE_DIR / "outputs"
@@ -28,7 +29,15 @@ TRANSCRIPTS_DIR = OUTPUT_DIR / "transcripts"
 SUPPORTED_EXTENSIONS = {".pdf", ".m4b", ".txt"}
 
 
-def run_step(name: str, command: List[str]) -> None:
+def backup_outputs(phase_label: str) -> None:
+    """Create timestamped backup of outputs after a phase."""
+    subprocess.run(
+        ["python", "scripts/backup_outputs.py", phase_label],
+        cwd=str(BASE_DIR)
+    )
+
+
+def run_step(name: str, command: List[str], backup_label: str = None) -> None:
     """Run a pipeline step as a subprocess with logging."""
     logging.info("=" * 60)
     logging.info(name)
@@ -38,6 +47,10 @@ def run_step(name: str, command: List[str]) -> None:
     result = subprocess.run(command, cwd=str(BASE_DIR))
     if result.returncode != 0:
         raise RuntimeError(f"Step '{name}' failed with exit code {result.returncode}")
+    
+    # Create backup if label provided
+    if backup_label:
+        backup_outputs(backup_label)
 
 
 def clean_outputs() -> None:
@@ -87,18 +100,6 @@ def main():
         nargs="+",
         required=True,
         help="Path(s) to input files (PDF or M4B audiobooks)",
-    )
-    parser.add_argument(
-        "--message",
-        type=str,
-        default=None,
-        help="Optional user message to drive Phase 4b/4c selections",
-    )
-    parser.add_argument(
-        "--max-delta",
-        type=float,
-        default=0.3,
-        help="Maximum affective change for Phase 4c",
     )
     parser.add_argument(
         "--clean",
@@ -174,43 +175,29 @@ def main():
     run_step(
         "Phase 1: Text Chunking",
         phase1_cmd,
+        backup_label="phase1_chunks"
     )
 
     # Phase 2: Node Extraction
-    run_step("Phase 2: Node Extraction", ["python", "scripts/phase2_extract_nodes.py"])
+    run_step(
+        "Phase 2: Node Extraction",
+        ["python", "scripts/phase2_extract_nodes.py"],
+        backup_label="phase2_nodes"
+    )
 
     # Phase 2.5: Entity Resolution
     run_step(
-        "Phase 2.5: Entity Resolution", ["python", "scripts/phase2_5_resolve_entities.py"]
+        "Phase 2.5: Entity Resolution",
+        ["python", "scripts/phase2_5_resolve_entities.py"],
+        backup_label="phase2.5_canonical"
     )
 
     # Phase 3: Relationship Extraction
-    run_step("Phase 3: Relationship Extraction", ["python", "scripts/phase3_extract_relationships.py"])
-
-    # Phase 4: Persona Sheet Generation
-    run_step("Phase 4: Persona Sheet Generation", ["python", "scripts/phase4_generate_persona_sheet.py"])
-
-    if args.message:
-        # Phase 4b: LLM-powered node selection
-        run_step(
-            "Phase 4b: Dynamic Node Selection",
-            ["python", "scripts/phase4b_select_nodes.py", "--message", args.message],
-        )
-
-        # Phase 4c: Affective Governor
-        run_step(
-            "Phase 4c: Affective Governor",
-            [
-                "python",
-                "scripts/phase4c_affective_governor.py",
-                "--selections",
-                "outputs/selected_nodes.json",
-                "--max-delta",
-                str(args.max_delta),
-            ],
-        )
-    else:
-        logging.info("Skipping Phases 4b and 4c (no message provided)")
+    run_step(
+        "Phase 3: Relationship Extraction",
+        ["python", "scripts/phase3_extract_relationships.py"],
+        backup_label="phase3_relationships"
+    )
 
     logging.info("Pipeline complete!")
 

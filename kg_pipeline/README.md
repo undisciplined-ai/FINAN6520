@@ -4,7 +4,7 @@
 
 ## Overview
 
-This pipeline transforms **PDFs or audio files** (M4B audiobooks) into structured knowledge graphs containing 5 node types (Persona, Value, Drive, ReasoningPattern, LinguisticStyle) and 7 relationship types, then assembles them into actionable persona prompts.
+This pipeline transforms **PDFs or audio files** (M4B audiobooks) into structured knowledge graphs containing 5 node types (CharacterTrait, Value, Drive, ReasoningPattern, LinguisticStyle) and 4 relationship types designed for downstream RAG consumers.
 
 For audio files, the pipeline first transcribes them using OpenAI Whisper API with parallel processing, then extracts knowledge graphs from the transcripts.
 
@@ -43,6 +43,7 @@ Expected output: `✅ VALIDATION PASSED`
 kg_pipeline/
 ├── config/
 │   ├── persona_schema.yaml    # Node/edge type definitions
+│   ├── kg_graph_export_schema.yaml # GraphRAG export + archetype query spec
 │   └── run_config.yaml         # Processing parameters
 ├── docs/
 │   ├── api_reference.md        # Vercel AI Gateway API docs
@@ -51,8 +52,7 @@ kg_pipeline/
 ├── examples/
 │   ├── chunks.jsonl            # Example chunked text
 │   ├── nodes.jsonl             # Example extracted nodes
-│   ├── edges.jsonl             # Example relationships
-│   └── persona_prompt.txt      # Example assembled prompt
+│   └── edges.jsonl             # Example relationships
 ├── outputs/                    # Generated files (git-ignored)
 ├── prompts/
 │   ├── phase1_extraction.txt   # Node extraction template
@@ -104,23 +104,36 @@ Send chunks to LLM to extract 5 node types with complete fields. Includes entity
 **Phase 3: Relationship Extraction**  
 Two-pass extraction: local relationships within chunks (parallel), then global cross-chunk relationships (sequential).
 
-**Phase 4: Persona Sheet Generation**  
-Traverse graph to assemble deterministic Mad-Libs persona prompts. Includes LLM node selection (4b) and affective governor (4c). *(Currently considered experimental/low priority—downstream consumers should not rely on the persona sheet/template output until a new spec is defined.)*
+**Graph Export** (after Phase 3)  
+Convert `nodes_canonical.jsonl` and `edges.jsonl` into GraphRAG-compatible format:
+
+```bash
+# Export to entities.jsonl & relationships.jsonl
+python scripts/export_knowledge_graph.py
+
+# Query by Jungian archetype
+python scripts/query_by_archetype.py --archetype Sage --top-k 20 --output outputs/sage_subgraph.json
+python scripts/query_by_archetype.py --archetype Hero --threshold 0.7
+```
+
+See `config/kg_graph_export_schema.yaml` for entity/relationship schema and archetype query workflow.
 
 ## Configuration
 
 ### Schema (`config/persona_schema.yaml`)
 
 Defines 5 node types:
-- **Persona**: Identity, worldview, communication style
+- **CharacterTrait**: Observable personality patterns and behaviors
 - **Value**: Prescriptive principles with behavioral directives
 - **Drive**: Goals, motivations, conflicts, stakes
 - **ReasoningPattern**: Decision templates with triggers
 - **LinguisticStyle**: Communication preferences and affect
 
-Defines 7 edge types:
-- persona_has_value, persona_has_drive, persona_uses_reasoning
-- persona_has_style, value_conflicts_with, drive_blocked_by, reasoning_supports
+Defines 4 edge types:
+- **causes**: Source directly produces target
+- **conflicts_with**: Source contradicts or undermines target
+- **evidences**: Source provides concrete support for target
+- **reinforces**: Source strengthens or amplifies target
 
 ### Runtime (`config/run_config.yaml`)
 
@@ -129,6 +142,29 @@ Processing parameters:
 - Model selection (openai/gpt-4o-mini)
 - Temperature, max_tokens, thresholds
 - Logging and token reporting
+
+### Graph Export (`config/kg_graph_export_schema.yaml`)
+
+Describes how to convert canonical nodes/edges into GraphRAG-compatible format:
+
+**Entity Schema** (`outputs/entities.jsonl`):
+- id, title, type, description, source_id
+- attributes.importance (0-1 score for sampling)
+- attributes.jungian_traits (desires, fears, strategies, talents, weaknesses, themes)
+- attributes.provenance (chunk_id, page_num)
+
+**Relationship Schema** (`outputs/relationships.jsonl`):
+- source, target, relationship, description
+- weight, confidence (0-1 scores)
+- source_id (document provenance)
+
+**Archetype Query Workflow**:
+1. Load archetype signature from `config/jungian_archetype_mapping.yaml`
+2. Score entities by weighted trait overlap (desires/fears: 3.0, strategies/talents: 2.0, weaknesses: 1.5, themes: 1.0)
+3. Filter entities with score ≥ 0.6 (or top-k)
+4. Return induced subgraph (entities + connecting relationships)
+
+Use `scripts/query_by_archetype.py` to filter the knowledge graph by any of the 12 Jungian archetypes (Innocent, Hero, Magician, Caregiver, Ruler, Creator, Everyman, Lover, Jester, Explorer, Sage, Rebel).
 
 ## Validation
 

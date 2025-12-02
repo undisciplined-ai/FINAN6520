@@ -6,13 +6,29 @@ NODE TYPES TO EXTRACT:
 INSTRUCTIONS:
 - Treat each chunk as the full universe of evidence; do not invent facts beyond what is implied.
 - Identify as many concepts as the chunk truly contains (zero is acceptable if nothing meaningful exists).
-- Rate importance from 0.0 (trivial) to 1.0 (foundational).
+- Rate importance using the CALIBRATED 10-BUCKET SYSTEM below (use precise decimals within ranges).
 - Write PRESCRIPTIVE, synthesized statements in your own words—no quotes, character names, or book references.
 - Highlight meta-cognition: infer the author/character's thinking approach or mechanism behind behaviors.
 - behavioral_directive fields must be actionable templates the persona can follow.
 - Include all type-specific fields from the schema plus the optional "reasoning_inspiration" string when you can clearly summarize the inspiration (otherwise omit it).
 - **Tag each node with Jungian traits from the vocabulary below.** Include at least one trait tag per node; select only traits clearly evident in the text. Use empty arrays `[]` if no trait from a category is present.
 - Return ONLY valid JSON (no markdown, no code blocks, no explanatory text).
+
+IMPORTANCE SCORING - 10-BUCKET CALIBRATED SYSTEM:
+Score each node using precise decimals (e.g., 0.47, 0.63, 0.88) within these ranges:
+
+  Bucket 10 [0.90-1.00]: FOUNDATIONAL IDENTITY - Core persona-defining concepts that appear across multiple contexts
+  Bucket 9  [0.80-0.89]: HIGHLY SIGNIFICANT - Major recurring patterns with broad transferability
+  Bucket 8  [0.70-0.79]: IMPORTANT - Valuable patterns with moderate scope and applicability  
+  Bucket 7  [0.60-0.69]: MODERATELY USEFUL - Solid patterns but more situational/context-bound
+  Bucket 6  [0.50-0.59]: USEFUL - Recognizable patterns with narrow or specialized application
+  Bucket 5  [0.40-0.49]: MINOR SIGNIFICANCE - Weak patterns or edge cases with limited utility
+  Bucket 4  [0.30-0.39]: LOW PRIORITY - Rarely applicable or overly specific patterns
+  Bucket 3  [0.20-0.29]: MARGINAL - Almost no transferable value beyond immediate context
+  Bucket 2  [0.10-0.19]: TRIVIAL - Negligible patterns with no practical application
+  Bucket 1  [0.00-0.09]: NOISE - Should not be extracted (use sparingly)
+
+TARGET DISTRIBUTION: Most nodes should fall in Buckets 5-8 (0.40-0.89). Reserve Bucket 10 for truly foundational concepts (≤10% of nodes). Avoid inflating scores - be realistic about transferability and generalizability.
 
 JUNGIAN TRAIT VOCABULARY:
 {trait_vocabulary}

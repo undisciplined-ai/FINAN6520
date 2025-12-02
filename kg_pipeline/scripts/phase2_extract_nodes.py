@@ -491,7 +491,8 @@ def main():
         with open(output_path, 'a') as output_file:
             for i, chunk in enumerate(chunks, 1):
                 chunk_label = f"{chunk['doc_id']}-{chunk['page_id']}-{chunk['chunk_id']}"
-                logging.info(f"Processing chunk {i}/{len(chunks)}: {chunk_label}")
+                pct_start = ((i-1) / len(chunks)) * 100
+                logging.info(f"[{i}/{len(chunks)} | {pct_start:.0f}%] Processing {chunk_label}...")
                 
                 nodes = process_chunk(chunk, schema, traits, prompt_template, config)
                 
@@ -507,7 +508,8 @@ def main():
                     'node_count': len(nodes)
                 }
                 
-                logging.info(f"  ✓ Extracted {len(nodes)} node(s)")
+                pct = (i / len(chunks)) * 100
+                logging.info(f"[{i}/{len(chunks)} | {pct:.0f}%] ✓ {chunk_label}: {len(nodes)} node(s)")
     
     # Save manifest
     save_manifest(manifest)
