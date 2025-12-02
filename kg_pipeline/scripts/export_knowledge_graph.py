@@ -204,8 +204,8 @@ def main():
     parser.add_argument(
         '--output-dir',
         type=Path,
-        default=Path('outputs'),
-        help='Output directory (default: outputs)'
+        default=Path('outputs/graphrag_export'),
+        help='Output directory (default: outputs/graphrag_export)'
     )
     
     args = parser.parse_args()
@@ -219,7 +219,10 @@ def main():
         print(f"❌ Edges file not found: {args.edges}", file=sys.stderr)
         sys.exit(1)
     
-    # Ensure output directory exists
+    # Ensure output directory exists (clean slate)
+    import shutil
+    if args.output_dir.exists():
+        shutil.rmtree(args.output_dir)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     
     # Define output files
@@ -245,19 +248,100 @@ def main():
     relationship_count = export_relationships(args.edges, relationships_file)
     print(f"✓ Wrote {relationship_count} relationships to {relationships_file}")
     
+    # Copy reference documentation
+    print()
+    print("Copying reference documentation...")
+    import shutil
+    config_dir = Path('config')
+    
+    reference_files = [
+        'jungian_archetype_mapping.yaml',
+        'jungian_traits.yaml',
+        'kg_graph_export_schema.yaml'
+    ]
+    
+    for ref_file in reference_files:
+        src = config_dir / ref_file
+        dst = args.output_dir / ref_file
+        if src.exists():
+            shutil.copy(src, dst)
+            print(f"✓ Copied {ref_file}")
+    
+    # Create README
+    readme_path = args.output_dir / 'README.md'
+    with open(readme_path, 'w', encoding='utf-8') as f:
+        f.write(f"""# GraphRAG Knowledge Graph Export
+
+Generated: {Path(args.nodes).stat().st_mtime}
+
+## Contents
+
+### Core Data Files
+- **entities.jsonl** - {entity_count} entities (character traits, reasoning patterns, linguistic styles)
+- **relationships.jsonl** - {relationship_count} relationships between entities
+
+### Reference Documentation
+- **jungian_archetype_mapping.yaml** - Maps the 12 Jungian archetypes and their trait signatures
+- **jungian_traits.yaml** - Complete taxonomy of psychological traits used in entity extraction
+- **kg_graph_export_schema.yaml** - Schema definition and query examples
+
+## Entity Structure
+
+Each entity in `entities.jsonl` contains:
+- `id` - Unique identifier
+- `title` - Entity label/name
+- `type` - Entity type (CharacterTrait, ReasoningPattern, LinguisticStyle, Drive)
+- `description` - Detailed description
+- `source_id` - Source document identifier
+- `attributes` - Rich metadata including:
+  - `importance` - Relevance score (0.0-1.0)
+  - `jungian_traits` - Psychological trait tags (desires, fears, strategies, talents, weaknesses, themes)
+  - `provenance` - Source tracking (chunk_id, page_num)
+  - `fields` - Type-specific additional data
+
+## Relationship Structure
+
+Each relationship in `relationships.jsonl` contains:
+- `source` - Source entity ID
+- `target` - Target entity ID
+- `relationship` - Relationship type
+- `description` - Evidence/context for the relationship
+- `weight` - Relationship strength (0.0-1.0)
+- `confidence` - Extraction confidence (0.0-1.0)
+- `source_id` - Source document identifier
+
+## Usage with GraphRAG
+
+1. Import `entities.jsonl` and `relationships.jsonl` into your graph database
+2. Use `jungian_archetype_mapping.yaml` to query entities by archetype alignment
+3. Filter entities by `importance` score for focused retrieval
+4. Leverage `jungian_traits` for semantic similarity searches
+
+## Jungian Archetype System
+
+Entities are tagged with psychological traits that map to 12 Jungian archetypes:
+
+**Ego** (Leave a Mark): Innocent, Hero, Magician  
+**Order** (Provide Structure): Caregiver, Ruler, Creator  
+**Social** (Connect to Others): Everyman, Lover, Jester  
+**Freedom** (Yearn for Paradise): Explorer, Sage, Rebel
+
+See `jungian_archetype_mapping.yaml` for complete trait signatures.
+""")
+    print(f"✓ Created README.md")
+    
     print()
     print("=" * 60)
     print("EXPORT SUMMARY")
     print("=" * 60)
-    print(f"Entities:       {entity_count}")
-    print(f"Relationships:  {relationship_count}")
+    print(f"Output directory:   {args.output_dir}")
+    print(f"Entities:           {entity_count}")
+    print(f"Relationships:      {relationship_count}")
+    print(f"Reference docs:     {len(reference_files)}")
     print()
     print("✓ Knowledge graph export complete!")
     print()
-    print("Next steps:")
-    print("  1. Import entities.jsonl and relationships.jsonl into your GraphRAG system")
-    print("  2. Use config/jungian_archetype_mapping.yaml for archetype queries")
-    print("  3. See config/kg_graph_export_schema.yaml for query workflow")
+    print(f"📁 All GraphRAG files are in: {args.output_dir.absolute()}")
 
 
 if __name__ == '__main__':

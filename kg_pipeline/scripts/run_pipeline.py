@@ -2,16 +2,26 @@
 """
 End-to-end Knowledge Graph Pipeline Runner
 
+CRITICAL: MUST RUN FROM VIRTUAL ENVIRONMENT!
+    Use: .venv\Scripts\python.exe scripts/run_pipeline.py
+    NOT: python scripts/run_pipeline.py (uses system Python without packages)
+
 Usage:
-    python scripts/run_pipeline.py --input /path/to/file.pdf
-    python scripts/run_pipeline.py --input /path/to/audiobook.m4b
-    python scripts/run_pipeline.py --input /path/to/input_folder
+    .venv\Scripts\python.exe scripts/run_pipeline.py --input /path/to/file.pdf
+    .venv\Scripts\python.exe scripts/run_pipeline.py --input /path/to/audiobook.m4b
+    .venv\Scripts\python.exe scripts/run_pipeline.py --input /path/to/input_folder
 
 Features:
     - Optional cleanup of outputs directory before running
-    - Sequential execution of Phases 0 through 3 (Phase 0 for audio files)
+    - Sequential execution of Phases 0 through 4 (Phase 0 for audio files)
     - Automatic backups after each phase
     - Supports PDF, TXT, and M4B audiobook inputs
+    - Creates clean GraphRAG export in outputs/graphrag_export/
+
+Requirements:
+    - Python packages: faster-whisper, anthropic, vercel-ai-sdk (npm)
+    - System: ffmpeg, CUDA 12.x, cuDNN 9.x
+    - GPU: NVIDIA with 8GB+ VRAM for local Whisper transcription
 """
 
 import argparse
@@ -38,13 +48,53 @@ def backup_outputs(phase_label: str) -> None:
 
 
 def run_step(name: str, command: List[str], backup_label: str = None) -> None:
-    """Run a pipeline step as a subprocess with logging."""
+    """
+    Run a pipeline step as a subprocess with logging.
+    
+    IMPORTANT: This function handles environment setup for subprocesses:
+    1. Reads Windows registry PATH to find ffmpeg (not in inherited env)
+    2. Adds cuDNN/cuBLAS bin directories to PATH for GPU support
+    3. Passes complete environment to subprocess
+    
+    All subprocess calls in this file MUST use sys.executable (venv Python)
+    instead of "python" to ensure packages are available.
+    """
+    import os
+    import sys
     logging.info("=" * 60)
     logging.info(name)
     logging.info("=" * 60)
     logging.info("Command: %s", " ".join(command))
 
-    result = subprocess.run(command, cwd=str(BASE_DIR))
+    # Prepare environment with all necessary paths
+    env = os.environ.copy()
+    
+    # On Windows, read PATH from registry to ensure we get ffmpeg
+    # This is necessary because terminal PATH may not be inherited properly
+    if sys.platform == 'win32':
+        import winreg
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\Session Manager\Environment') as key:
+                system_path = winreg.QueryValueEx(key, 'Path')[0]
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Environment') as key:
+                user_path = winreg.QueryValueEx(key, 'Path')[0]
+            # Use registry PATH instead of inherited PATH
+            env['PATH'] = system_path + os.pathsep + user_path
+        except Exception as e:
+            logging.warning(f"Failed to read PATH from registry: {e}")
+    
+    # Add cuDNN and cuBLAS paths for GPU support (CUDA 12.x)
+    # These MUST be in PATH for ctranslate2/faster-whisper to find DLLs
+    venv_base = Path(sys.prefix)
+    cudnn_path = venv_base / "Lib" / "site-packages" / "nvidia" / "cudnn" / "bin"
+    cublas_path = venv_base / "Lib" / "site-packages" / "nvidia" / "cublas" / "bin"
+    
+    extra_paths = [str(cudnn_path), str(cublas_path)]
+    
+    # Add these paths to the front of PATH so they take precedence
+    env['PATH'] = os.pathsep.join(extra_paths + [env.get('PATH', '')])
+    
+    result = subprocess.run(command, cwd=str(BASE_DIR), env=env)
     if result.returncode != 0:
         raise RuntimeError(f"Step '{name}' failed with exit code {result.returncode}")
     
@@ -148,18 +198,32 @@ def main():
     transcribed_texts: List[Path] = []
     if audio_files:
         TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
-        for audio_file in audio_files:
-            transcript_path = TRANSCRIPTS_DIR / f"{audio_file.stem}.txt"
+        
+        # Use local Whisper batch transcription for all audio files at once
+        # Assumes all audio files are in the same input directory
+        input_dir = audio_files[0].parent if audio_files else None
+        
+        if input_dir:
+            # Run batch transcription with local Whisper (processes all .m4b files in directory)
             run_step(
-                "Phase 0: Audio Transcription",
+                "Phase 0: Audio Transcription (Local Whisper GPU)",
                 [
-                    "python",
-                    "scripts/phase0_transcribe_audio.py",
-                    str(audio_file),
-                    str(transcript_path),
+                    sys.executable,  # Use current Python interpreter (from venv)
+                    "scripts/batch_transcribe_local_whisper.py",
+                    "--input-dir", str(input_dir),
+                    "--output-dir", str(TRANSCRIPTS_DIR),
+                    "--model", "base",
+                    "--device", "cuda",
                 ],
             )
-            transcribed_texts.append(transcript_path)
+        
+        # Collect transcribed outputs
+        for audio_file in audio_files:
+            transcript_path = TRANSCRIPTS_DIR / f"{audio_file.stem}.txt"
+            if transcript_path.exists():
+                transcribed_texts.append(transcript_path)
+            else:
+                logging.warning(f"Transcript not found for {audio_file.name}")
     
     # Phase 1: Chunk inputs (PDFs or transcripts)
     phase1_inputs = pdf_files + text_files + transcribed_texts
@@ -168,7 +232,7 @@ def main():
         logging.error("No textual inputs available for Phase 1 after preprocessing.")
         sys.exit(1)
 
-    phase1_cmd = ["python", "scripts/phase1_chunk_pdfs.py", *[str(path) for path in phase1_inputs]]
+    phase1_cmd = [sys.executable, "scripts/phase1_chunk_pdfs.py", *[str(path) for path in phase1_inputs]]
     if args.append:
         phase1_cmd.append("--append")
     
@@ -181,25 +245,39 @@ def main():
     # Phase 2: Node Extraction
     run_step(
         "Phase 2: Node Extraction",
-        ["python", "scripts/phase2_extract_nodes.py"],
+        [sys.executable, "scripts/phase2_extract_nodes.py"],
         backup_label="phase2_nodes"
     )
 
     # Phase 2.5: Entity Resolution
     run_step(
         "Phase 2.5: Entity Resolution",
-        ["python", "scripts/phase2_5_resolve_entities.py"],
+        [sys.executable, "scripts/phase2_5_resolve_entities.py"],
         backup_label="phase2.5_canonical"
     )
 
     # Phase 3: Relationship Extraction
     run_step(
         "Phase 3: Relationship Extraction",
-        ["python", "scripts/phase3_extract_relationships.py"],
+        [sys.executable, "scripts/phase3_extract_relationships.py"],
         backup_label="phase3_relationships"
     )
 
+    # Phase 4: Export to GraphRAG format
+    run_step(
+        "Phase 4: GraphRAG Export",
+        [sys.executable, "scripts/export_knowledge_graph.py"],
+        backup_label=None  # No backup needed - this is the final export
+    )
+
+    logging.info("=" * 60)
     logging.info("Pipeline complete!")
+    logging.info("=" * 60)
+    logging.info("📁 GraphRAG export available at: outputs/graphrag_export/")
+    logging.info("   - entities.jsonl")
+    logging.info("   - relationships.jsonl")
+    logging.info("   - Reference documentation (archetype mappings, schema, traits)")
+    logging.info("   - README.md")
 
 
 if __name__ == "__main__":

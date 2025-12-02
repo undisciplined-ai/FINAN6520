@@ -120,7 +120,7 @@ def get_audio_duration(audio_path: str) -> float:
 def split_single_chunk(args):
     """Helper function to split a single audio chunk in parallel."""
     import subprocess
-    audio_path, start_time, chunk_duration_seconds, chunk_path, chunk_idx, total_chunks = args
+    audio_path, start_time, chunk_duration_seconds, chunk_path, chunk_idx, total_chunks, start_time_global = args
     
     cmd = [
         'ffmpeg',
@@ -137,9 +137,22 @@ def split_single_chunk(args):
     
     subprocess.run(cmd, capture_output=True, check=True)
     
-    # Log progress every 5 chunks
-    if (chunk_idx + 1) % 5 == 0 or chunk_idx == total_chunks - 1:
-        logging.info(f"Split progress: {chunk_idx+1}/{total_chunks} chunks created")
+    # Calculate progress metrics
+    elapsed = time.time() - start_time_global
+    completed = chunk_idx + 1
+    progress_pct = (completed / total_chunks) * 100
+    
+    # Calculate ETA
+    if elapsed > 0:
+        rate = completed / elapsed
+        remaining = total_chunks - completed
+        eta_seconds = remaining / rate if rate > 0 else 0
+        eta_str = f"{eta_seconds:.0f}s" if eta_seconds < 120 else f"{eta_seconds/60:.1f}min"
+    else:
+        eta_str = "calculating..."
+    
+    # Log progress for every chunk
+    logging.info(f"[Split {completed}/{total_chunks} | {progress_pct:.0f}%] Chunk {chunk_idx} created | Elapsed: {elapsed:.1f}s | ETA: {eta_str}")
     
     return chunk_path
 
@@ -175,11 +188,16 @@ def split_audio_into_chunks(audio_path: str, chunk_duration_minutes: int = 20, m
     temp_dir = tempfile.mkdtemp(prefix="audio_chunks_")
     
     # Prepare all chunk split tasks
+    start_time_global = time.time()
     tasks = []
     for i in range(num_chunks):
         start_time = i * chunk_duration_seconds
         chunk_path = os.path.join(temp_dir, f"chunk_{i:04d}.mp3")
-        tasks.append((audio_path, start_time, chunk_duration_seconds, chunk_path, i, num_chunks))
+        tasks.append((audio_path, start_time, chunk_duration_seconds, chunk_path, i, num_chunks, start_time_global))
+    
+    logging.info("")
+    logging.info("Starting audio split process...")
+    logging.info("-" * 60)
     
     # Execute splits in parallel
     chunk_paths = []
@@ -192,7 +210,11 @@ def split_audio_into_chunks(audio_path: str, chunk_duration_minutes: int = 20, m
     # Sort to maintain order
     chunk_paths.sort()
     
-    logging.info(f"Audio split complete: {len(chunk_paths)} chunks in {temp_dir}")
+    total_split_time = time.time() - start_time_global
+    logging.info("-" * 60)
+    logging.info(f"✓ Audio split complete: {len(chunk_paths)} chunks created in {total_split_time:.1f}s ({total_split_time/60:.2f} min)")
+    logging.info(f"  Chunks stored in: {temp_dir}")
+    logging.info("")
     return chunk_paths
 
 

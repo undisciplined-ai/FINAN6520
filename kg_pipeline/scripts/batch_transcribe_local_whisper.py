@@ -1,35 +1,56 @@
 #!/usr/bin/env python3
 """
-Batch Transcription with Shared Worker Queue
+Batch Transcription with Local Faster-Whisper (GPU)
 
-Strategy:
-1. Split all audiobooks into chunks in parallel (8 splitting workers)
-2. Queue all chunks from all books into a shared transcription queue
-3. 8 transcription workers pull from shared queue continuously
-4. Each book tracks its own chunks and stitches them back together in order
-5. Live progress updates show status for each book independently
+Uses faster-whisper for local GPU-accelerated transcription.
+Much faster and cheaper than API, but requires CUDA-capable GPU.
 
-This maximizes throughput - workers never idle, all books progress simultaneously.
+CRITICAL SETUP NOTES:
+1. MUST be called from run_pipeline.py with venv Python (sys.executable)
+2. Requires ffmpeg in PATH (handled by run_pipeline.py via registry)
+3. Requires cuDNN 9.x DLLs (registered below before imports)
+4. All subprocess calls MUST pass env=os.environ to inherit PATH
+
+Requirements:
+    pip install faster-whisper nvidia-cudnn-cu12 nvidia-cublas-cu12
+    System: ffmpeg, CUDA 12.x runtime
+    GPU: NVIDIA with 8GB+ VRAM (16GB recommended for large models)
 """
 
-import argparse
-import logging
+# CRITICAL: Register DLL directories BEFORE importing faster_whisper/ctranslate2
+# This ensures Windows can find cuDNN/cuBLAS DLLs when ctranslate2 loads
 import os
 import sys
-import tempfile
-import json
 from pathlib import Path
-from typing import List, Dict, Tuple
+
+if sys.platform == 'win32':
+    # Add cuDNN and cuBLAS DLL directories for Windows DLL search
+    # These paths are also in PATH (set by run_pipeline.py), but os.add_dll_directory()
+    # is more reliable for finding DLLs at import time
+    venv_base = Path(sys.prefix)
+    cudnn_bin = venv_base / 'Lib' / 'site-packages' / 'nvidia' / 'cudnn' / 'bin'
+    cublas_bin = venv_base / 'Lib' / 'site-packages' / 'nvidia' / 'cublas' / 'bin'
+    
+    if cudnn_bin.exists():
+        os.add_dll_directory(str(cudnn_bin))
+    if cublas_bin.exists():
+        os.add_dll_directory(str(cublas_bin))
+
+# Now safe to import other modules
+import argparse
+import json
+import logging
+import tempfile
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from threading import Lock
-import yaml
-import time
+from typing import Dict, List, Tuple
 
 try:
-    from openai import OpenAI
+    from faster_whisper import WhisperModel
 except ImportError:
-    OpenAI = None
+    WhisperModel = None
 
 
 @dataclass
@@ -55,34 +76,22 @@ class ChunkTask:
     book_name: str
     chunk_index: int
     chunk_path: str
-    audio_path: str
     output_cache_path: Path
 
 
-class BatchTranscriber:
-    """Manages shared queue transcription across multiple audiobooks."""
+class BatchTranscriberLocal:
+    """Manages local GPU transcription across multiple audiobooks."""
     
-    def __init__(self, max_workers: int = 8, max_retries: int = 3):
-        self.max_workers = max_workers
-        self.max_retries = max_retries
+    def __init__(self, model_size: str = "base", device: str = "cuda", compute_type: str = "float16"):
+        self.model_size = model_size
+        self.device = device
+        self.compute_type = compute_type
         self.progress_map: Dict[str, BookProgress] = {}
-        self.openai_client = None  # Initialize lazily after env is loaded
-        self.telemetry = {
-            'rate_limit_429s': 0,
-            'server_5xxs': 0,
-            'total_retries': 0
-        }
-        self.telemetry_lock = Lock()
+        self.model = None  # Initialize lazily
         self.overall_completed = 0
         self.overall_total = 0
         self.overall_lock = Lock()
         
-    def load_config(self) -> Dict:
-        """Load runtime configuration."""
-        config_path = Path(__file__).parent.parent / "config" / "run_config.yaml"
-        with open(config_path, 'r') as f:
-            return yaml.safe_load(f)
-    
     def setup_logging(self):
         """Configure logging."""
         logging.basicConfig(
@@ -92,19 +101,30 @@ class BatchTranscriber:
         )
     
     def get_audio_duration(self, audio_path: str) -> float:
-        """Get audio duration in seconds."""
+        """
+        Get audio duration in seconds using ffprobe.
+        
+        CRITICAL: Must pass env=os.environ so subprocess inherits PATH from run_pipeline.py
+        (which reads Windows registry to find ffmpeg).
+        """
         import subprocess
         cmd = [
             'ffprobe', '-v', 'quiet', '-print_format', 'json',
             '-show_format', audio_path
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, env=os.environ)
         data = json.loads(result.stdout)
         return float(data['format']['duration'])
     
     def split_audio_chunk(self, args: Tuple) -> str:
-        """Split a single audio chunk using ffmpeg."""
+        """
+        Split a single audio chunk using ffmpeg.
+        
+        CRITICAL: Must pass env=os.environ so subprocess inherits PATH from run_pipeline.py
+        (which reads Windows registry to find ffmpeg).
+        """
         import subprocess
+        
         audio_path, start_time, duration, chunk_path, book_name, chunk_idx, total_chunks, start_time_global = args
         
         cmd = [
@@ -113,7 +133,7 @@ class BatchTranscriber:
             '-ab', '64k', '-ar', '16000', chunk_path
         ]
         
-        subprocess.run(cmd, capture_output=True, check=True)
+        subprocess.run(cmd, capture_output=True, check=True, env=os.environ)
         
         # Calculate progress metrics
         elapsed = time.time() - start_time_global
@@ -195,55 +215,34 @@ class BatchTranscriber:
         except Exception as e:
             logging.warning(f"Failed to cache chunk: {e}")
     
-    def transcribe_chunk_with_retry(self, task: ChunkTask) -> Tuple[str, int, bool, str]:
-        """Transcribe a single chunk with retry logic."""
+    def transcribe_chunk(self, task: ChunkTask) -> Tuple[str, int, bool, str]:
+        """Transcribe a single chunk using local Whisper."""
         # Check cache first
         cached = self.load_cached_chunk(task.output_cache_path)
         if cached:
             return (task.book_name, task.chunk_index, True, cached)
         
-        # Attempt transcription with retries
-        for attempt in range(self.max_retries):
-            try:
-                with open(task.chunk_path, 'rb') as audio_file:
-                    response = self.openai_client.audio.transcriptions.create(
-                        model="whisper-1",
-                        file=audio_file,
-                        response_format="text"
-                    )
-                
-                transcript = response.strip()
-                
-                # Cache successful transcription
-                self.save_chunk_cache(task.output_cache_path, transcript)
-                
-                return (task.book_name, task.chunk_index, True, transcript)
-                
-            except Exception as e:
-                error_str = str(e).lower()
-                
-                if '429' in error_str or 'rate limit' in error_str:
-                    with self.telemetry_lock:
-                        self.telemetry['rate_limit_429s'] += 1
-                        self.telemetry['total_retries'] += 1
-                    wait_time = (2 ** attempt) * 2
-                    logging.warning(f"[{task.book_name}] Chunk {task.chunk_index}: Rate limit, waiting {wait_time}s...")
-                    time.sleep(wait_time)
-                    
-                elif '5' in error_str and 'server' in error_str:
-                    with self.telemetry_lock:
-                        self.telemetry['server_5xxs'] += 1
-                        self.telemetry['total_retries'] += 1
-                    wait_time = (2 ** attempt) * 1
-                    logging.warning(f"[{task.book_name}] Chunk {task.chunk_index}: Server error, waiting {wait_time}s...")
-                    time.sleep(wait_time)
-                    
-                else:
-                    logging.error(f"[{task.book_name}] Chunk {task.chunk_index}: {e}")
-                    return (task.book_name, task.chunk_index, False, f"[MISSING CHUNK {task.chunk_index}]")
-        
-        # All retries exhausted
-        return (task.book_name, task.chunk_index, False, f"[MISSING CHUNK {task.chunk_index}]")
+        try:
+            # Transcribe using faster-whisper
+            segments, info = self.model.transcribe(
+                task.chunk_path,
+                beam_size=5,
+                language="en",  # Change if needed
+                vad_filter=True,  # Voice activity detection
+                vad_parameters=dict(min_silence_duration_ms=500)
+            )
+            
+            # Combine all segments
+            transcript = " ".join([segment.text for segment in segments]).strip()
+            
+            # Cache successful transcription
+            self.save_chunk_cache(task.output_cache_path, transcript)
+            
+            return (task.book_name, task.chunk_index, True, transcript)
+            
+        except Exception as e:
+            logging.error(f"[{task.book_name}] Chunk {task.chunk_index}: {e}")
+            return (task.book_name, task.chunk_index, False, f"[MISSING CHUNK {task.chunk_index}]")
     
     def update_progress(self, book_name: str, chunk_index: int, success: bool, transcript: str):
         """Update progress for a book after chunk completes."""
@@ -299,12 +298,15 @@ class BatchTranscriber:
             logging.warning(f"[{book_name}] Failed chunks: {progress.failed_chunks}")
     
     def run(self, input_dir: Path, output_dir: Path):
-        """Execute batch transcription with shared queue."""
-        # Initialize OpenAI client now that env is loaded
-        if OpenAI is None:
-            logging.error("openai package not installed. Run: pip install openai")
+        """Execute batch transcription with local Whisper."""
+        # Initialize Whisper model
+        if WhisperModel is None:
+            logging.error("faster-whisper not installed. Run: pip install faster-whisper")
             sys.exit(1)
-        self.openai_client = OpenAI()
+        
+        logging.info(f"Loading Whisper model '{self.model_size}' on {self.device}...")
+        self.model = WhisperModel(self.model_size, device=self.device, compute_type=self.compute_type)
+        logging.info(f"✓ Model loaded successfully")
         
         # Find all audiobooks
         audio_files = sorted(input_dir.glob("*.m4b"))
@@ -313,10 +315,11 @@ class BatchTranscriber:
             sys.exit(1)
         
         logging.info("="*60)
-        logging.info("Batch Transcription - Shared Queue Strategy")
+        logging.info("Batch Transcription - Local Whisper (GPU)")
         logging.info("="*60)
         logging.info(f"Audiobooks: {len(audio_files)}")
-        logging.info(f"Workers: {self.max_workers}")
+        logging.info(f"Model: {self.model_size}")
+        logging.info(f"Device: {self.device}")
         logging.info("="*60)
         
         # Phase 1: Split all audiobooks in parallel
@@ -336,18 +339,16 @@ class BatchTranscriber:
                     total_chunks=len(chunk_paths)
                 )
         
-        # Phase 2: Build shared transcription queue
-        logging.info("\n🎯 Phase 2: Transcribing from shared queue...")
+        # Phase 2: Build transcription queue
+        logging.info("\n🎯 Phase 2: Transcribing with local Whisper...")
         
         all_tasks = []
         for book_name, chunk_paths in book_chunks_map.items():
-            audio_path = next(f for f in audio_files if f.stem == book_name)
             for chunk_idx, chunk_path in enumerate(chunk_paths):
                 task = ChunkTask(
                     book_name=book_name,
                     chunk_index=chunk_idx,
                     chunk_path=chunk_path,
-                    audio_path=str(audio_path),
                     output_cache_path=self.get_cache_path(book_name, chunk_idx)
                 )
                 all_tasks.append(task)
@@ -355,13 +356,14 @@ class BatchTranscriber:
         self.overall_total = len(all_tasks)
         logging.info(f"Total chunks to transcribe: {self.overall_total}")
         
-        # Phase 3: Transcribe from shared queue with worker pool
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = [executor.submit(self.transcribe_chunk_with_retry, task) for task in all_tasks]
-            
-            for future in as_completed(futures):
-                book_name, chunk_index, success, transcript = future.result()
-                self.update_progress(book_name, chunk_index, success, transcript)
+        # Phase 3: Transcribe - single-threaded for GPU efficiency
+        start_time = time.time()
+        for task in all_tasks:
+            book_name, chunk_index, success, transcript = self.transcribe_chunk(task)
+            self.update_progress(book_name, chunk_index, success, transcript)
+        
+        elapsed = time.time() - start_time
+        logging.info(f"\n⏱️  Total transcription time: {elapsed/60:.1f} minutes ({elapsed/3600:.2f} hours)")
         
         # Phase 4: Assemble and save transcripts
         logging.info("\n📝 Phase 3: Assembling transcripts...")
@@ -394,50 +396,34 @@ class BatchTranscriber:
             status = "✅" if progress.success_rate == 100 else "⚠️"
             logging.info(f"{status} {book_name}: {progress.success_rate:.1f}% success")
         
-        logging.info("")
-        logging.info("Rate Limit Telemetry:")
-        logging.info(f"  429 rate limits: {self.telemetry['rate_limit_429s']}")
-        logging.info(f"  5xx server errors: {self.telemetry['server_5xxs']}")
-        logging.info(f"  Total retries: {self.telemetry['total_retries']}")
         logging.info("="*60)
 
 
-def load_env_file(env_path: str = ".env") -> None:
-    """Load environment variables from .env file."""
-    if not Path(env_path).exists():
-        return
-    
-    with open(env_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                key, value = line.split('=', 1)
-                os.environ[key.strip()] = value.strip()
-
-
 def main():
-    parser = argparse.ArgumentParser(description="Batch transcription with shared queue")
+    parser = argparse.ArgumentParser(description="Batch transcription with local Whisper (GPU)")
     parser.add_argument("--input-dir", type=str, default="inputs", help="Input directory")
     parser.add_argument("--output-dir", type=str, default="outputs/transcripts", help="Output directory")
-    parser.add_argument("--workers", type=int, default=8, help="Number of transcription workers")
+    parser.add_argument("--model", type=str, default="base", 
+                       choices=["tiny", "base", "small", "medium", "large-v2", "large-v3"],
+                       help="Whisper model size (base recommended for speed/quality balance)")
+    parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"],
+                       help="Device to use (cuda for GPU, cpu for CPU)")
     
     args = parser.parse_args()
     
-    # Load environment variables
-    load_env_file()
-    
-    # Check for OpenAI API key
-    if not os.environ.get('OPENAI_API_KEY'):
-        logging.error("Error: OPENAI_API_KEY not found in environment")
-        logging.error("Add OPENAI_API_KEY=sk-... to .env file")
-        sys.exit(1)
-    
-    transcriber = BatchTranscriber(max_workers=args.workers)
+    transcriber = BatchTranscriberLocal(
+        model_size=args.model,
+        device=args.device,
+        compute_type="float16" if args.device == "cuda" else "int8"
+    )
     transcriber.setup_logging()
     transcriber.run(
         input_dir=Path(args.input_dir),
         output_dir=Path(args.output_dir)
     )
+    
+    # Explicit success exit
+    sys.exit(0)
 
 
 if __name__ == "__main__":
