@@ -53,7 +53,7 @@ importance_sampling:
 # Parallel Processing
 parallel:
   enabled: true
-  max_workers: 8  # null = autoscale based on workload; set to 4/8/16 to override
+  max_workers: 16  # null = autoscale based on workload; set to 4/8/16 to override
 
 # Transcription (Phase 0)
 transcription:

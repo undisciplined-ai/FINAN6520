@@ -117,13 +117,41 @@ def get_audio_duration(audio_path: str) -> float:
     return float(data['format']['duration'])
 
 
-def split_audio_into_chunks(audio_path: str, chunk_duration_minutes: int = 20) -> List[str]:
+def split_single_chunk(args):
+    """Helper function to split a single audio chunk in parallel."""
+    import subprocess
+    audio_path, start_time, chunk_duration_seconds, chunk_path, chunk_idx, total_chunks = args
+    
+    cmd = [
+        'ffmpeg',
+        '-y',  # Overwrite output
+        '-ss', str(start_time),  # Start time
+        '-t', str(chunk_duration_seconds),  # Duration
+        '-i', audio_path,  # Input file
+        '-vn',  # No video
+        '-acodec', 'libmp3lame',  # MP3 codec
+        '-ab', '64k',  # Bitrate
+        '-ar', '16000',  # Sample rate (Whisper optimized)
+        chunk_path
+    ]
+    
+    subprocess.run(cmd, capture_output=True, check=True)
+    
+    # Log progress every 5 chunks
+    if (chunk_idx + 1) % 5 == 0 or chunk_idx == total_chunks - 1:
+        logging.info(f"Split progress: {chunk_idx+1}/{total_chunks} chunks created")
+    
+    return chunk_path
+
+
+def split_audio_into_chunks(audio_path: str, chunk_duration_minutes: int = 20, max_workers: int = 8) -> List[str]:
     """
-    Split audio file into chunks using ffmpeg directly (no memory loading).
+    Split audio file into chunks using ffmpeg in parallel.
     
     Args:
         audio_path: Path to M4B audiobook file
         chunk_duration_minutes: Duration of each chunk in minutes
+        max_workers: Number of parallel ffmpeg workers for splitting
     
     Returns:
         List of temporary chunk file paths
@@ -141,38 +169,28 @@ def split_audio_into_chunks(audio_path: str, chunk_duration_minutes: int = 20) -
     
     # Calculate number of chunks
     num_chunks = int((duration_seconds + chunk_duration_seconds - 1) / chunk_duration_seconds)
-    logging.info(f"Splitting into {num_chunks} chunks of {chunk_duration_minutes} minutes each")
+    logging.info(f"Splitting into {num_chunks} chunks of {chunk_duration_minutes} minutes each using {max_workers} workers")
     
     # Create temporary directory for chunks
     temp_dir = tempfile.mkdtemp(prefix="audio_chunks_")
-    chunk_paths = []
     
+    # Prepare all chunk split tasks
+    tasks = []
     for i in range(num_chunks):
         start_time = i * chunk_duration_seconds
         chunk_path = os.path.join(temp_dir, f"chunk_{i:04d}.mp3")
-        
-        # Use ffmpeg to extract chunk directly
-        cmd = [
-            'ffmpeg',
-            '-y',  # Overwrite output
-            '-ss', str(start_time),  # Start time
-            '-t', str(chunk_duration_seconds),  # Duration
-            '-i', audio_path,  # Input file
-            '-vn',  # No video
-            '-acodec', 'libmp3lame',  # MP3 codec
-            '-ab', '64k',  # Bitrate
-            '-ar', '16000',  # Sample rate (Whisper optimized)
-            chunk_path
-        ]
-        
-        subprocess.run(cmd, capture_output=True, check=True)
-        chunk_paths.append(chunk_path)
-        
-        # Log progress every 5 chunks
-        if (i + 1) % 5 == 0 or i == num_chunks - 1:
-            logging.info(f"Split progress: {i+1}/{num_chunks} chunks created")
-        else:
-            logging.debug(f"Created chunk {i+1}/{num_chunks}: {chunk_path}")
+        tasks.append((audio_path, start_time, chunk_duration_seconds, chunk_path, i, num_chunks))
+    
+    # Execute splits in parallel
+    chunk_paths = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(split_single_chunk, task) for task in tasks]
+        for future in as_completed(futures):
+            chunk_path = future.result()
+            chunk_paths.append(chunk_path)
+    
+    # Sort to maintain order
+    chunk_paths.sort()
     
     logging.info(f"Audio split complete: {len(chunk_paths)} chunks in {temp_dir}")
     return chunk_paths
@@ -498,12 +516,13 @@ def main():
     max_retries = transcription_config.get('max_retries', 3)
     failure_threshold = transcription_config.get('failure_threshold_percent', 20)
     
-    # Split audio into chunks
-    chunk_paths = split_audio_into_chunks(audio_path, chunk_duration_minutes=20)
-    
     # Get parallel config
     parallel_config = config.get('parallel', {})
     config_workers = parallel_config.get('max_workers', None)  # None allows autoscaling
+    split_workers = min(config_workers or 8, 8)  # Use up to 8 workers for splitting
+    
+    # Split audio into chunks (parallel)
+    chunk_paths = split_audio_into_chunks(audio_path, chunk_duration_minutes=20, max_workers=split_workers)
     
     # Autoscale workers based on chunk count
     max_workers = suggest_workers(
