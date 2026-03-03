@@ -211,6 +211,16 @@ computation; never reimplements them inline.
 
 MtrxApp methods are thin orchestrators: pull data from the database, pass it to
 a function, return or display the result. No business logic lives here.
+
+INTERFACE CONTRACT (Repository Pattern):
+MtrxDatabase's public methods -- get_records(), get_exercise(), get_user(), etc.
+-- are a stable contract. No code outside MtrxDatabase ever touches
+self.__records, self.__exercises, or any private attribute directly. This
+boundary is what makes the storage backend swappable: replacing in-memory lists
+with SQLite queries requires changing only MtrxDatabase internals; MtrxApp and
+all view functions are completely untouched. At thousands of users this swap is
+a localized change, not a rewrite. Treat this boundary as an invariant: if a
+view function ever accesses a private attribute directly, the contract is broken.
 """
 
 
@@ -618,10 +628,11 @@ def compute_ddm(exercise_name: str,
     - All four canonical schemes (3x2, 3x5, 3x10, 3x20) are treated equally.
     - For each scheme, find the most recent session within the lookback window.
     - Back-calculate the implied reference weight: session_weight / pct_of_ddm.
-    - DDM = average of all implied references found (1-4 schemes may contribute).
+    - DDM = average of all implied references found (2-4 schemes may contribute).
     - A scheme with no sessions within the window is skipped -- it does not block
       the calculation.
-    - Returns None only if no sessions exist in ANY scheme within the window.
+    - Returns None if fewer than 2 schemes have qualifying sessions within the
+      window -- a single implied reference is not a reliable average.
 
     WHY today IS AN EXPLICIT PARAMETER AND NOT datetime.date.today() INSIDE:
     Pure functions receive all their inputs as arguments. Hard-coding
@@ -636,10 +647,13 @@ def compute_ddm(exercise_name: str,
     without clarity. Pandas enters the picture only when aggregating across many
     records (Section 6 views).
 
-    WHY return None ON NO HISTORY:
-    DDM is undefined, not zero, when no data exists. Returning 0 would silently
-    produce wrong weight suggestions. The caller checks for None and surfaces an
-    appropriate message.
+    WHY REQUIRE A MINIMUM OF 2 SCHEMES:
+    A DDM built from a single implied reference is not an average -- it is one
+    data point dressed as a consensus value. Two independent references from two
+    different rep ranges provide a cross-check: if they are close, DDM is
+    reliable; if they diverge, the athlete's training history is inconsistent
+    in a way worth surfacing. Fewer than 2 qualifying schemes returns None,
+    prompting the athlete to log another scheme before receiving weight guidance.
     """
     exercise_key = exercise_name.strip().lower()
     cutoff_date  = today - datetime.timedelta(days=lookback_days)
@@ -669,10 +683,10 @@ def compute_ddm(exercise_name: str,
         most_recent = sorted(candidates, key=lambda r: r['date'], reverse=True)[0]
         implied_references.append(most_recent['weight'] / scheme_pct)
 
-    if not implied_references:
-        return None   # No sessions in any scheme within the lookback window
+    if len(implied_references) < 2:
+        return None   # Fewer than 2 qualifying schemes -- not a reliable average
 
-    # Average however many implied references were found (1-4)
+    # Average however many implied references were found (2-4)
     return float(sum(implied_references) / len(implied_references))
 
 # ── 4.9 DDM-Derived Weight Suggestions ───────────────────────────────────────
@@ -881,10 +895,19 @@ def build_summary_matrix(user_id: int,
 
     return output
 
+OUTPUT FORMAT: build_summary_matrix returns long-format (tidy) data -- one row
+per (workout_type, exercise_name, stimulus) combination. The view spec describes
+a pivoted presentation with categorical rows (Realized, Adaptation, Fatigue,
+Non-Fatigue, Total) and hierarchical columns (Total -> Workout Type -> Exercise).
+That reshape is a display-layer concern and happens in mtrx_app.py, not here.
+Long format is the correct data structure: it is pandas-native, directly
+composable with matplotlib groupby charts, and does not bake any display
+assumptions into the data pipeline.
+
 COLOR LOGIC: Applied at the display layer only. For each (exercise_name, date)
-cell in the vesting grid, compute_blended_adaptation produces a blended_hex and
-blended_pct. Opacity of that hex = blended_pct as a decimal. This is a display
-concern, not a data concern -- it is not stored in the DataFrame.
+cell in the vesting grid, build_color_matrix (Section 6.2b) produces a
+blended_hex and blended_pct. Opacity of that hex = blended_pct as a decimal.
+This is a display concern, not a data concern -- it is not stored in the DataFrame.
 """
 
 # ── 6.2 Vesting Grid ──────────────────────────────────────────────────────────
@@ -937,9 +960,13 @@ def build_vesting_grid(user_id: int,
     )
 
     return grid
-    # Color matrix: build a parallel pivot with the same shape where each cell
-    # value is the output of compute_blended_adaptation for that (date, exercise)
-    # pair. This is returned as a separate structure alongside grid for display.
+
+COMPANION FUNCTION: build_color_matrix (Section 6.2b) takes identical inputs
+and returns a dict keyed by (date, exercise_name) -> compute_blended_adaptation
+output. Call both functions together; the display layer overlays the color map
+onto the grid using the shared (date, exercise_name) key space. Two separate
+return values (grid + color_map) rather than one combined structure keeps the
+numeric data pipeline clean and independently testable.
 """
 
 # ── 6.3 Program Balance View ──────────────────────────────────────────────────
@@ -1070,7 +1097,7 @@ def build_weight_guidance(exercise_name: str,
             'exercise':    exercise_name,
             'ddm':         None,
             'suggestions': None,
-            'note':        'No sessions found in any canonical scheme within the last 90 days.',
+            'note':        'Fewer than 2 canonical schemes have sessions in the last 90 days. Log at least one more scheme to establish a reliable DDM.',
         }
 
     return {
@@ -1238,19 +1265,73 @@ MODULES: 4-5 (pandas, groupby, pivot_table, matplotlib).
 
 === STAGE 6 — Persistence ===
 
-BUILD: Add save(filepath) and load(filepath) to MtrxApp.
+BUILD: Add serialize() / deserialize() to MtrxDatabase; add save() / load() to
+MtrxApp. Use JSON with an explicit schema_version field -- human-readable,
+migratable, and free of the class-structure coupling that makes pickle files
+break on any __init__ attribute change.
+
+SCHEMA_VERSION = 1   # increment and add a migration function on any structural change
+
+-- MtrxDatabase (serialization logic lives with the state it describes) --
+
+  def serialize(self) -> dict:
+      # Returns a plain dict of all five internal structures.
+      # datetime.date objects  -> ISO 8601 strings via .isoformat()
+      # tuple keys in __matrix_plans -> '|'.join(key)  e.g. 'Sagittal|Push'
+      return {
+          'schema_version':  SCHEMA_VERSION,
+          'user_counter':    self.__user_counter,
+          'measure_counter': self.__measure_counter,
+          'record_counter':  self.__record_counter,
+          'users':           {str(k): {**v, 'join_date': v['join_date'].isoformat()}
+                              for k, v in self.__users.items()},
+          'measurements':    {str(k): [{**m, 'date': m['date'].isoformat()} for m in lst]
+                              for k, lst in self.__measurements.items()},
+          'exercises':       dict(self.__exercises),
+          'records':         [{**r, 'date': r['date'].isoformat()} for r in self.__records],
+          'matrix_plans':    {str(k): {'|'.join(cell): pri for cell, pri in plan.items()}
+                              for k, plan in self.__matrix_plans.items()},
+      }
+
+  @classmethod
+  def deserialize(cls, data: dict) -> 'MtrxDatabase':
+      # 1. Verify data['schema_version'] == SCHEMA_VERSION; raise ValueError if not.
+      #    If schema migrations are ever needed, add a migration chain here
+      #    keyed by version number before this check.
+      # 2. Construct a fresh MtrxDatabase instance.
+      # 3. Re-hydrate each structure:
+      #    - str keys back to int for users/measurements/matrix_plans
+      #    - ISO strings back to datetime.date via datetime.date.fromisoformat()
+      #    - '|'-joined strings back to tuple keys for matrix_plans
+      # 4. Restore __user_counter, __measure_counter, __record_counter from data.
+      # 5. Return the reconstructed instance.
+
+-- MtrxApp --
+
+  import json
 
   def save(self, filepath: str) -> None:
-      with open(filepath, 'wb') as f:
-          pickle.dump(self.__db, f)
+      with open(filepath, 'w') as f:
+          json.dump(self.__db.serialize(), f, indent=2)
 
   def load(self, filepath: str) -> None:
-      with open(filepath, 'rb') as f:
-          self.__db = pickle.load(f)
+      with open(filepath, 'r') as f:
+          self.__db = MtrxDatabase.deserialize(json.load(f))
 
-pickle serializes the entire MtrxDatabase object -- all five data structures --
-to a binary file. This is the Module 12 pattern used in the Bank system.
-MODULES: Module 12 (pickle, file I/O).
+WHY NOT PICKLE:
+pickle couples the save file to the live class structure. Any new attribute
+added to __init__ after a file was saved raises AttributeError on load -- with
+no migration path and no human-readable audit trail. For a system used over
+multiple months with real training data, this is an unacceptable data-loss risk.
+
+WHY serialize() / deserialize() ON MtrxDatabase AND NOT MtrxApp:
+Serialization logic belongs next to the state it serializes. MtrxApp.save() and
+.load() stay thin -- open a file and delegate. This maintains the Repository
+interface contract from Section 2: if the backend later becomes SQLite,
+serialize() is replaced with a commit() call and MtrxApp is completely unchanged.
+
+MODULES: Module 12 (file I/O, json stdlib), Module 3 (dict/list comprehensions
+for serialize/deserialize hydration logic).
 """
 
 # ── End of Technical Design Specification ─────────────────────────────────────
