@@ -36,17 +36,13 @@ Three different squat patterns produce broader and more durable adaptation than 
 
 ### 3. Spaced Repetition
 
-Spaced repetition — re-exposing to material at increasing intervals — produces more durable retention than massed practice. The adaptation windows in this system function as an implicit spacing mechanism.
-
-Each stimulus type's window defines how long a workout continues to pay dividends. A Neural session (1–3 reps) vests over 21 days; a Mechanical Tension session over 56 days. This naturally governs how far apart exposures need to be to remain meaningful — not as a rule, but as a visualization that reveals when returns are peaking versus expiring.
+Spaced repetition — re-exposing to material at increasing intervals — produces more durable retention than massed practice. The interleaving method applied in this system function as an implicit spacing mechanism.
 
 ### 4. Planned Forgetting
 
-Massed repetition — e.g., bench press three times per week, always at the same rep range — builds familiarity. Familiarity is not the same as skill.
+Massed repetition — e.g., bench press three times per week, always at the same rep range — builds familiarity. Familiarity is not the same as fluency.
 
 Massed practice consolidates whatever movement pattern is being repeated, including errors. Spaced, interleaved re-exposure forces the athlete to re-acquire the motor pattern each session. This is more effortful and feels less smooth. It is also more effective: the effort of re-acquisition is precisely the mechanism that produces fluent, correct consolidation rather than habituated error.
-
-The Matrix cell structure architecturally enforces this. By rotating exercises and stimuli, the system prevents any single pattern from becoming reflexive before it has been correctly consolidated.
 
 ---
 
@@ -82,8 +78,6 @@ Tracking RPE over time within a given exercise produces a longitudinal record of
 
 More importantly, the act of estimating RPE consistently builds a skill: knowing your own limits with precision. This meta-skill — accurate self-assessment of output capacity — compounds in value over time. It transfers across exercises, across training contexts, and across life.
 
-Cross-user RPE comparison is excluded. Subjective effort perception is too individually variable to support meaningful cross-user benchmarking. The value of RPE in this system is entirely within-user.
-
 ---
 
 ## Why the Scheme Percentages Are Not 1RM
@@ -92,7 +86,7 @@ The canonical scheme percentages (3×2 at 95%, 3×5 at 80%, 3×10 at 65%, 3×20 
 
 This system's percentages reflect 3 working sets completed at RPE 7–8 (2–3 reps in reserve after the bonus rep on the final set). That is a fundamentally different physiological context. Three sets at 80% of your 1RM at this RPE standard would be well above most athletes' capacity. These percentages are calibrated for the RPE standard defined in this system and should not be conflated with traditional 1RM programming.
 
-The practical consequence: DDM is not an estimated 1RM. It is better understood as the implied ceiling at this system's RPE standard — the weight at which a single rep, performed fresh, would leave 2–3 reps in reserve. That is a more conservative and more trainable ceiling than a true 1RM.
+The practical consequence: DDM is not an estimated 1RM. It is better understood as the implied ceiling at this system's RPE standard — the weight at which a single rep, performed fresh, could be attempted within a reasonable risk tolerance. That is a more conservative and more trainable ceiling than a true 1RM.
 
 ---
 
