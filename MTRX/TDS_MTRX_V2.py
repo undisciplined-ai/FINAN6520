@@ -1,22 +1,18 @@
 """
 ================================================================================
-  MTRX — Technical Design Specification  (V2)
-  FINAN 6520 | Final Project | Harmer, Kai | U0895215
-================================================================================
-"""
+  MTRX — Technical Design Specification
+================================================================================"""
 
 # ── Document Purpose ──────────────────────────────────────────────────────────
 PURPOSE = """
 This document is a complete technical design specification for the MTRX workout
-tracking application. It maps every component of the system described in the
-Assignment Context to the specific Python constructs, data structures, and
-libraries covered in Modules 1-13. The resolution target is: a senior developer
-should be able to build the full application using only this document and the
-course materials, without external references.
+tracking application. It maps every component of the system described in this
+specification to the specific Python constructs, data structures, and libraries.
+The resolution target is: a senior developer should be able to build the full
+application using only this document, without external references.
 
 The document is organized into seven sections mirroring the system's logical
-layers, followed by an optional Extra Credit section containing the full
-implementation roadmap.
+layers, followed by an Implementation Roadmap.
 """
 
 # ── System Architecture Overview ──────────────────────────────────────────────
@@ -39,10 +35,6 @@ stores only raw records. The app never accesses raw state directly -- it calls
 database methods and passes the results to functions. A bug in any calculation
 is isolated to one function in one file.
 
-STRUCTURAL ANALOG IN THE COURSE:
-This is the Module 12 Bank system pattern -- Database holding private state,
-Branch as the public controller -- extended with a dedicated pure-function layer
-and a constants module.
 """
 
 
@@ -140,7 +132,7 @@ DEFAULT_MATRIX_GRID = {
 # ── 1.5 Controlled Vocabulary Lists ───────────────────────────────────────────
 # These are the validation sets used on data entry. Any write method checks
 # membership before accepting a value: if value not in VALID_LIST: raise ValueError
-# This is a Module 3 membership check (in).
+# Membership check using the 'in' operator.
 
 MOVEMENT_PLANES  = ['Sagittal', 'Frontal', 'Transverse', 'Neutral']
 MOVEMENT_TYPES   = ['Accessory/Isolation', 'Carry/Bracing', 'Gait/Locomotion',
@@ -162,7 +154,7 @@ PROGRAM_START_DATE = datetime.date(2026, 1, 5)   # First Monday of the program
 ###############################################################################
 # SECTION 2: CLASS ARCHITECTURE  (mtrx_database.py)
 ###############################################################################
-# Two classes. The pattern mirrors the Module 12 Bank system exactly.
+# Two classes.
 
 CLASS_ARCHITECTURE_NOTES = """
 -- 2.1  MtrxDatabase --
@@ -463,7 +455,7 @@ def get_records(self, user_id: int = None, date_start: datetime.date = None,
     #     result = [r for r in result if r['exercise_name'].strip().lower() == key]
     # return result
     #
-    # Chained list comprehensions (Module 3). For view functions, the caller
+    # Chained list comprehensions. For view functions, the caller
     # either passes user_id only and does further filtering in pandas, or passes
     # all filters and receives a minimal pre-filtered list.
 """
@@ -576,7 +568,7 @@ def compute_unrealized_vesting_pct(workout_date: datetime.date,
                                    adaptation_days: int) -> float:
     """
     datetime.date subtraction yields a timedelta; .days extracts the integer
-    count (Module 5). max and min clamp to [0, 1] (Module 2 built-ins). No
+    count. max and min clamp to [0, 1]. No
     import beyond datetime is needed.
     """
     days_elapsed = (today - workout_date).days
@@ -642,8 +634,8 @@ def compute_ddm(exercise_name: str,
 
     WHY NO PANDAS HERE:
     The filter + sort + take-first pattern on a small list (records for one user
-    and one exercise) is handled cleanly by list comprehension and sorted() --
-    both Module 3. Constructing a DataFrame for these lookups would add overhead
+    and one exercise) is handled cleanly by list comprehension and sorted().
+    Constructing a DataFrame for these lookups would add overhead
     without clarity. Pandas enters the picture only when aggregating across many
     records (Section 6 views).
 
@@ -666,7 +658,7 @@ def compute_ddm(exercise_name: str,
         req_reps   = props['reps']        # single source of truth
         scheme_pct = props['pct_of_ddm']
 
-        # Filter to matching records within the recency window (Module 3 list comprehension)
+        # Filter to matching records within the recency window
         candidates = [
             r for r in records
             if r['user_id'] == user_id
@@ -693,7 +685,7 @@ def compute_ddm(exercise_name: str,
 
 def compute_weight_suggestions(ddm: float) -> dict:
     """
-    Dict comprehension (Module 3) over CANONICAL_SCHEMES. Result is a dict of
+    Dict comprehension over CANONICAL_SCHEMES. Result is a dict of
     {scheme_key: suggested_weight} for all four schemes. All suggestions are
     user-overridable at the app layer.
     """
@@ -712,9 +704,8 @@ def compute_blended_adaptation(contributions: list) -> dict:
     contributions: list of dicts, each:
         {'stimulus': str, 'actual_volume': float, 'unrealized_pct': float}
 
-    Hex-to-RGB uses string slicing and int(string, 16) -- base-16 integer cast
-    introduced in Module 2 type casting. RGB-to-hex uses an f-string format
-    specifier (Module 3). No external color library is used or needed.
+    Hex-to-RGB uses string slicing and int(string, 16) -- base-16 integer cast.
+    RGB-to-hex uses an f-string format specifier. No external color library is used or needed.
     """
     total_volume = sum(c['actual_volume'] for c in contributions)
     if total_volume == 0:
@@ -729,7 +720,7 @@ def compute_blended_adaptation(contributions: list) -> dict:
     for c in contributions:
         weight    = c['actual_volume'] / total_volume
         hex_color = STIMULUS_TABLE[c['stimulus']]['hex']   # e.g., '#FF6A00'
-        r = int(hex_color[1:3], 16)   # Module 2 string slicing + base-16 cast
+        r = int(hex_color[1:3], 16)   # string slicing + base-16 cast
         g = int(hex_color[3:5], 16)
         b = int(hex_color[5:7], 16)
         r_blend += weight * r
@@ -761,8 +752,8 @@ def check_intra_cell_variation(user_id: int,
     during the current program week -- flagging a repeat.
 
     WHY A set FOR used_in_cell:
-    Membership check is the only operation. set provides O(1) lookup (Module 2).
-    Building it with .add() in a loop (Module 3) is clear and does not depend on
+    Membership check is the only operation. set provides O(1) lookup.
+    Building it with .add() in a loop is clear and does not depend on
     sorted order.
     """
     # Step 1 -- Filter records to this user and this week
@@ -819,7 +810,7 @@ def check_stimulus_interleaving(user_id: int,
 # All view functions accept the flat records list and other data structures as
 # arguments and return a pandas DataFrame. The conversion pd.DataFrame(records)
 # happens once at the top of each function. Derived columns are added via
-# .apply() (Module 4).
+# .apply().
 
 # ── 6.1 Summary Matrix ────────────────────────────────────────────────────────
 
@@ -837,7 +828,7 @@ def build_summary_matrix(user_id: int,
 
     df = pd.DataFrame(user_records)
 
-    # Step 2 -- Add derived columns via .apply() (Module 4)
+    # Step 2 -- Add derived columns via .apply()
     df['stimulus']     = df['reps'].apply(classify_stimulus)
     df['actual_reps']  = df.apply(
         lambda r: compute_actual_reps(r['sets'], r['reps'], r['bonus_reps']),
@@ -1132,8 +1123,8 @@ MULTI_USER_BOUNDARY_TABLE = """
 def get_program_week_bounds(target_date: datetime.date) -> tuple:
     """
     Returns (week_start, week_end) for the program week containing target_date.
-    datetime.timedelta arithmetic (Module 5). Floor division (//) for week
-    number (Module 2). No external calendar library.
+    datetime.timedelta arithmetic; floor division (//) for week number.
+    No external calendar library.
     """
     days_offset = (target_date - PROGRAM_START_DATE).days
     if days_offset < 0:
@@ -1155,19 +1146,18 @@ def get_block_label(target_date: datetime.date, weeks_per_block: int = 4) -> str
 
 
 ###############################################################################
-# EXTRA CREDIT: IMPLEMENTATION ROADMAP
+# IMPLEMENTATION ROADMAP
 ###############################################################################
 # This section outlines the build sequence for the full application. Each stage
 # produces testable output using only tools established by that stage.
 
-EXTRA_CREDIT_ROADMAP = """
+IMPLEMENTATION_ROADMAP = """
 === STAGE 1 — Constants (mtrx_constants.py) ===
 
 BUILD:   Define all constants from Section 1 in a single file.
 TEST:    Import the file and print STIMULUS_TABLE, DEFAULT_MATRIX_GRID,
          CANONICAL_SCHEMES. Verify all 32 matrix cells are present. No test
          framework needed -- visual inspection via print.
-MODULE:  Module 2 (dicts, lists, sets).
 
 
 === STAGE 2 — Pure Functions (mtrx_functions.py) ===
@@ -1189,9 +1179,7 @@ BUILD ORDER:
    check_stimulus_interleaving
 
 TEST PATTERN: Each function is called directly with hardcoded inputs and the
-result is printed and verified by hand. This is the Module 6 homework pattern
-applied to each function.
-MODULES:  1-5 (arithmetic, control flow, datetime, math).
+result is printed and verified by hand.
 
 
 === STAGE 3 — Database (mtrx_database.py) ===
@@ -1211,9 +1199,7 @@ BUILD ORDER:
                     -- verify seed matches defaults, update persists
 
 TEST: After each entity group is added, print the database __repr__ and inspect
-one get_* call. Use the same safe_call / try-except wrapper pattern from the
-homework checker files.
-MODULES: 8-12 (OOP, encapsulation, __init__, __repr__, private attributes).
+one get_* call. Use a safe_call / try-except wrapper pattern.
 
 
 === STAGE 4 — App Controller (mtrx_app.py) ===
@@ -1245,7 +1231,6 @@ log_workout RETURN VALUE:
 
 TEST: Register 2 users, add 5 exercises, log 10 workouts across 2 weeks, call
 all four view functions, print outputs.
-MODULES: 8-12 (OOP, composition -- MtrxApp holds MtrxDatabase as private attr).
 
 
 === STAGE 5 — Views and Visualization ===
@@ -1257,10 +1242,9 @@ BUILD: Finalize view functions. Add matplotlib display functions in mtrx_app.py.
   Program Balance    -> styled 4x8 grid with status color coding
   Summary Matrix     -> grouped bar chart by workout type
 
-MATPLOTLIB APPROACH: Use fig, ax = plt.subplots() (Module 4 OOP API). For color
+MATPLOTLIB APPROACH: Use fig, ax = plt.subplots(). For color
 grids, iterate cells and set background as RGBA tuple: (r, g, b, alpha) where
 alpha = blended_pct.
-MODULES: 4-5 (pandas, groupby, pivot_table, matplotlib).
 
 
 === STAGE 6 — Persistence ===
@@ -1329,9 +1313,6 @@ Serialization logic belongs next to the state it serializes. MtrxApp.save() and
 .load() stay thin -- open a file and delegate. This maintains the Repository
 interface contract from Section 2: if the backend later becomes SQLite,
 serialize() is replaced with a commit() call and MtrxApp is completely unchanged.
-
-MODULES: Module 12 (file I/O, json stdlib), Module 3 (dict/list comprehensions
-for serialize/deserialize hydration logic).
 """
 
 # ── End of Technical Design Specification ─────────────────────────────────────
