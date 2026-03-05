@@ -24,7 +24,7 @@ Each layer imports only from the layer(s) below it.
             |
     mtrx_functions.py   <- imports: mtrx_constants, datetime, math
             |
-    mtrx_database.py    <- imports: mtrx_constants, mtrx_functions, datetime, pickle
+    mtrx_database.py    <- imports: mtrx_constants, mtrx_functions, datetime, json
             |
     mtrx_app.py         <- imports: mtrx_database, mtrx_functions, pandas, matplotlib
 
@@ -131,17 +131,24 @@ DEFAULT_MATRIX_GRID = {
 
 # ── 1.5 Controlled Vocabulary Lists ───────────────────────────────────────────
 # These are the validation sets used on data entry. Any write method checks
-# membership before accepting a value: if value not in VALID_LIST: raise ValueError
-# Membership check using the 'in' operator.
+# membership before accepting a value: if value not in VALID_SET: raise ValueError
+# Membership check using the 'in' operator. Sets provide O(1) lookup and
+# communicate intent: these are bags of valid values, not ordered sequences.
 
-MOVEMENT_PLANES  = ['Sagittal', 'Frontal', 'Transverse', 'Neutral']
-MOVEMENT_TYPES   = ['Accessory/Isolation', 'Carry/Bracing', 'Gait/Locomotion',
-                    'Hinge', 'Pull', 'Push', 'Rotation', 'Squat']
-WORKOUT_TYPES    = ['Conditioning', 'Weightlifting', 'Mobility', 'Recovery']
-LATERALITY       = ['Bilateral', 'Unilateral']
-LOAD_TYPES       = ['Band', 'Barbell', 'Bodyweight', 'Cable', 'Curl Bar',
-                    'Dumbbell', 'Kettlebell', 'Machine', 'Medicineball', 'N/A']
-PRIORITY_OPTIONS = ['High', 'Medium', 'Low', 'N/A']
+MOVEMENT_PLANES  = {'Sagittal', 'Frontal', 'Transverse', 'Neutral'}
+MOVEMENT_TYPES   = {'Accessory/Isolation', 'Carry/Bracing', 'Gait/Locomotion',
+                    'Hinge', 'Pull', 'Push', 'Rotation', 'Squat'}
+WORKOUT_TYPES    = {'Conditioning', 'Weightlifting', 'Mobility', 'Recovery'}
+LATERALITY       = {'Bilateral', 'Unilateral'}
+LOAD_TYPES       = {'Band', 'Barbell', 'Bodyweight', 'Cable', 'Curl Bar',
+                    'Dumbbell', 'Kettlebell', 'Machine', 'Medicineball', 'N/A'}
+PRIORITY_OPTIONS = {'High', 'Medium', 'Low', 'N/A'}
+
+# Ordered lists for deterministic iteration (e.g. building the 4x8 grid).
+# Validation uses the sets above; iteration uses these lists for stable row/column order.
+MOVEMENT_PLANES_ORDERED = ['Sagittal', 'Frontal', 'Transverse', 'Neutral']
+MOVEMENT_TYPES_ORDERED  = ['Accessory/Isolation', 'Carry/Bracing', 'Gait/Locomotion',
+                           'Hinge', 'Pull', 'Push', 'Rotation', 'Squat']
 
 # ── 1.6 Program Calendar Anchor ───────────────────────────────────────────────
 # All week and block calculations derive from this single anchor. There is no
@@ -260,7 +267,8 @@ def get_user(self, user_id: int) -> dict:
     # return dict(self.__users[user_id])   # return a copy, not the live dict
 
 def get_all_users(self) -> dict:
-    # return dict(self.__users)
+    # return {k: dict(v) for k, v in self.__users.items()}
+    # Deep-copy each inner dict so callers cannot mutate internal state.
 """
 
 # ── 3.2 User Measurements ─────────────────────────────────────────────────────
@@ -282,7 +290,9 @@ WHY dict[int, list[dict]] SORTED BY DATE:
 This is a time-series per user. The most-recent-on-or-before query (used every
 time a bodyweight exercise is logged) requires finding the largest date that does
 not exceed the target. With the list maintained in ascending date order, a single
-reverse iteration finds this in O(n) where n is measurements per user (small).
+forward scan finds this in O(n) where n is measurements per user (small): iterate
+forward, updating the result at each entry where date <= target_date, so the last
+update is the most recent qualifying measurement.
 An unsorted structure would require a .sort() call on every query.
 
 SORT INVARIANT: add_measurement inserts and re-sorts using
@@ -364,7 +374,10 @@ def add_exercise(self, exercise_name: str, workout_type: str, laterality: str,
 def update_exercise(self, exercise_name: str, **kwargs) -> None:
     # 1. key = exercise_name.strip().lower()
     # 2. if key not in self.__exercises: raise KeyError
-    # 3. for field, value in kwargs.items():
+    # 3. if 'exercise_name' in kwargs:
+    #        raise ValueError('exercise_name cannot be changed. Records reference '
+    #                         'exercises by name; renaming would orphan historical data.')
+    # 4. for field, value in kwargs.items():
     #        validate field is a known attribute; validate value against vocab
     #        self.__exercises[key][field] = value
 
@@ -377,6 +390,12 @@ def get_exercises_for_cell(self, movement_plane: str, movement_type: str) -> lis
     # return [v['exercise_name'] for v in self.__exercises.values()
     #         if v['movement_plane'] == movement_plane
     #         and v['movement_type'] == movement_type]
+
+def get_all_exercises(self) -> dict:
+    # return {k: dict(v) for k, v in self.__exercises.items()}
+    # Required by view functions (build_summary_matrix, build_vesting_grid,
+    # build_program_balance) and flag functions (check_intra_cell_variation)
+    # which need the full exercises dict as an argument.
 """
 
 # ── 3.4 Workout Records ───────────────────────────────────────────────────────
@@ -458,6 +477,31 @@ def get_records(self, user_id: int = None, date_start: datetime.date = None,
     # Chained list comprehensions. For view functions, the caller
     # either passes user_id only and does further filtering in pandas, or passes
     # all filters and receives a minimal pre-filtered list.
+
+def delete_record(self, record_id: int) -> None:
+    # 1. Find the record: match = [r for r in self.__records if r['record_id'] == record_id]
+    # 2. if not match: raise KeyError(f'record_id {record_id} not found')
+    # 3. self.__records = [r for r in self.__records if r['record_id'] != record_id]
+    # Rebuilds the list excluding the target record. O(n) but records are
+    # append-heavy and deletes are rare (correcting data-entry mistakes).
+
+def delete_measurement(self, user_id: int, measurement_id: int) -> None:
+    # 1. Validate user_id exists
+    # 2. original_len = len(self.__measurements[user_id])
+    # 3. self.__measurements[user_id] = [
+    #        m for m in self.__measurements[user_id]
+    #        if m['measurement_id'] != measurement_id
+    #    ]
+    # 4. if len(self.__measurements[user_id]) == original_len:
+    #        raise KeyError(f'measurement_id {measurement_id} not found for user {user_id}')
+
+def delete_exercise(self, exercise_name: str) -> None:
+    # 1. key = exercise_name.strip().lower()
+    # 2. if key not in self.__exercises: raise KeyError
+    # 3. Check for referencing records:
+    #        if any(r['exercise_name'].strip().lower() == key for r in self.__records):
+    #            raise ValueError('Cannot delete exercise with existing workout records.')
+    # 4. del self.__exercises[key]
 """
 
 # ── 3.5 Matrix Plan ───────────────────────────────────────────────────────────
@@ -609,12 +653,16 @@ def compute_fatigue_volume(actual_volume: float,
 # ── 4.8 DDM ───────────────────────────────────────────────────────────────────
 
 def compute_ddm(exercise_name: str,
-                user_id: int,
                 records: list,
                 today: datetime.date,
                 lookback_days: int = 90) -> float | None:
     """
-    Computes the Desirable Difficulty Max for a given user and exercise.
+    Computes the Desirable Difficulty Max for a given exercise.
+
+    CALLER CONTRACT: records is pre-filtered to a single user before being
+    passed here. The caller (MtrxApp or build_weight_guidance) is responsible
+    for calling db.get_records(user_id=user_id) and passing only that user's
+    records. This function does not re-filter by user_id.
 
     Logic:
     - All four canonical schemes (3x2, 3x5, 3x10, 3x20) are treated equally.
@@ -661,8 +709,7 @@ def compute_ddm(exercise_name: str,
         # Filter to matching records within the recency window
         candidates = [
             r for r in records
-            if r['user_id'] == user_id
-            and r['exercise_name'].strip().lower() == exercise_key
+            if r['exercise_name'].strip().lower() == exercise_key
             and r['sets'] == req_sets
             and r['reps'] == req_reps
             and r['date'] >= cutoff_date
@@ -992,13 +1039,28 @@ def build_program_balance(user_id: int,
         )
         df = df.dropna(subset=['movement_plane', 'movement_type'])
 
+    # Compute derived columns once before the loop (used when view_mode is
+    # 'volume' or 'reps'). Hoisted here so the work is done once, not 32 times.
+    if not df.empty:
+        df['actual_reps']   = df.apply(
+            lambda r: compute_actual_reps(r['sets'], r['reps'], r['bonus_reps']),
+            axis=1
+        )
+        df['laterality']    = df['exercise_name'].apply(
+            lambda x: exercises.get(x.strip().lower(), {}).get('laterality', 'Bilateral')
+        )
+        df['actual_volume'] = df.apply(
+            lambda r: compute_actual_volume(r['actual_reps'], r['weight'], r['laterality']),
+            axis=1
+        )
+
     # Build the 4x8 output grid
     result_rows  = []
     period_days  = (period_end - period_start).days + 1
     days_elapsed = min((today - period_start).days + 1, period_days)
 
-    for plane in MOVEMENT_PLANES:
-        for mtype in MOVEMENT_TYPES:
+    for plane in MOVEMENT_PLANES_ORDERED:
+        for mtype in MOVEMENT_TYPES_ORDERED:
             cell_key     = (plane, mtype)
             priority     = matrix_plan.get(cell_key, 'N/A')
             weekly_target = PRIORITY_TARGETS[priority]
@@ -1044,20 +1106,8 @@ def build_program_balance(user_id: int,
             }
 
             if view_mode in ('volume', 'reps') and not df.empty:
-                df_temp = df.copy()
-                df_temp['actual_reps']   = df_temp.apply(
-                    lambda r: compute_actual_reps(r['sets'], r['reps'], r['bonus_reps']),
-                    axis=1
-                )
-                df_temp['laterality']    = df_temp['exercise_name'].apply(
-                    lambda x: exercises.get(x.strip().lower(), {}).get('laterality', 'Bilateral')
-                )
-                df_temp['actual_volume'] = df_temp.apply(
-                    lambda r: compute_actual_volume(r['actual_reps'], r['weight'], r['laterality']),
-                    axis=1
-                )
-                cell_vals = df_temp[
-                    (df_temp['movement_plane'] == plane) & (df_temp['movement_type'] == mtype)
+                cell_vals = df[
+                    (df['movement_plane'] == plane) & (df['movement_type'] == mtype)
                 ]
                 row['cell_volume'] = cell_vals['actual_volume'].sum() if not cell_vals.empty else 0
                 row['cell_reps']   = cell_vals['actual_reps'].sum()   if not cell_vals.empty else 0
@@ -1073,15 +1123,17 @@ def build_program_balance(user_id: int,
 # ── 6.4 Weight Guidance View ──────────────────────────────────────────────────
 
 def build_weight_guidance(exercise_name: str,
-                          user_id: int,
                           records: list,
                           today: datetime.date) -> dict:
     """
     Surfaces DDM-derived weight suggestions for all four canonical schemes.
     All suggestions are user-overridable. DDM recalculates automatically as
     new sessions are logged.
+
+    CALLER CONTRACT: records is pre-filtered to a single user before being
+    passed here (same contract as compute_ddm).
     """
-    ddm = compute_ddm(exercise_name, user_id, records, today)
+    ddm = compute_ddm(exercise_name, records, today)
 
     if ddm is None:
         return {
@@ -1188,12 +1240,16 @@ BUILD ORDER:
 1. __users          + add_user + get_user
                     -- verify counter increments, duplicate rejection
 2. __measurements   + add_measurement + get_bodyweight_on_date
-                    -- verify sort invariant and date boundary behavior
+                      + delete_measurement
+                    -- verify sort invariant, date boundary behavior,
+                       delete by measurement_id
 3. __exercises      + add_exercise + get_exercise + update_exercise
-                    -- verify dedup and vocab validation
-4. __records        + add_record + get_records
+                      + get_all_exercises + delete_exercise
+                    -- verify dedup, vocab validation, name-change rejection,
+                       delete blocked when records reference the exercise
+4. __records        + add_record + get_records + delete_record
                     -- verify flat list grows, bodyweight auto-resolution,
-                       filter combinations
+                       filter combinations, delete by record_id
 5. __matrix_plans   seeded at user creation
                     + update_matrix_cell + get_cell_priority
                     -- verify seed matches defaults, update persists
@@ -1214,7 +1270,8 @@ KEY METHODS:
                                                          check_intra_cell_variation
                                                          check_stimulus_interleaving
                                                          returns record_id + flags
-  get_weight_guidance(exercise_name, user_id)         -> build_weight_guidance
+  get_weight_guidance(exercise_name, user_id)         -> db.get_records(user_id) then
+                                                         build_weight_guidance
   get_summary_matrix(user_id, metric)                 -> build_summary_matrix
   get_vesting_grid(user_id, axis_filter, metric)      -> build_vesting_grid
   get_program_balance(user_id, period, view_mode)     -> build_program_balance
