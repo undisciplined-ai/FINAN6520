@@ -1,10 +1,5 @@
 
 
-# MTRX_UPDATES.md — Draft
-
----
-
-```markdown
 # MTRX — TDS Update Specification
 
 This document specifies all changes to `TDS_MTRX.py` required to bring the
@@ -133,11 +128,9 @@ goals into one cell's priority value loses the intent.
 # as explicit named constraints. The prescription engine treats these as
 # additional allocation targets when computing remaining weekly value.
 #
-# OPEN QUESTION: If a personal constraint's weekly_target exceeds or
-# conflicts with the cell's base priority allocation, which takes
-# precedence? The current intent is that personal constraints are additive
-# — they represent demand on top of the matrix, not a replacement for it.
-# The prescription engine sums both when determining what to recommend.
+# Personal constraints are additive — they represent demand on top of the
+# matrix, not a replacement for it. The prescription engine sums both when
+# determining what to recommend.
 ```
 
 ### Downstream Impact
@@ -285,7 +278,7 @@ def get_config_ledger(self, user_id: int) -> list:
   pattern as `__matrix_plans`. Increment `SCHEMA_VERSION`.
 - `MULTI_USER_BOUNDARY_TABLE`: Add row for Configuration Ledger
   (per user, time-series).
-- `MtrxApp.__repr__`: Consider surfacing active config info.
+- `MtrxApp.__repr__`: Surface active config (preset key and days_per_week) in repr output.
 
 ---
 
@@ -644,9 +637,9 @@ DATA MODEL IMPLICATIONS (for upstream design):
   feeds the radar grid positioning.
 - Workout records (Section 3.4) are the raw input to any scoring formula.
 - Preset matrix configs (Section 1.4) define the axes of the radar grid.
-- All of the above are already in place or specified in this update
-  document. No additional structural changes are needed to accommodate the
-  competitive layer — it will be built on top of existing data.
+- All of the above are already in place or specified above. No additional
+  structural changes are needed to accommodate the competitive layer — it
+  will be built on top of existing data.
 """
 ```
 
@@ -699,10 +692,9 @@ new app methods. The data model is ready for them.
 
 **Stage 7 — Competitive Platform (Future)**
 
-Not built now. Placeholder stage acknowledging that scoring, handicapping,
-leaderboards, and temporal challenges will be implemented here when the
-mechanics are defined. The data model from Stages 1–6 is designed to
-support this without structural changes.
+Scoring, handicapping, leaderboards, and temporal challenges are implemented
+in this stage when the mechanics are defined. The data model from Stages 1–6
+requires no structural changes to support this stage.
 
 ---
 
@@ -720,8 +712,3 @@ support this without structural changes.
 | 8  | ADD    | 8               | Competitive platform intent (placeholder, no mechanics)       |
 | 9  | MODIFY | Roadmap         | Update stages 2–6; add stage 7 placeholder                   |
 | 10 | MODIFY | 4 (log_workout) | Remove flag keys from return value                            |
-```
-
----
-
-That's the full draft. Want me to push this to the repo, or do you want to review / revise any sections first?
