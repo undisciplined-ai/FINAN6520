@@ -460,8 +460,24 @@ def add_user(self, username: str, display_name: str, email: str,
 
 ## REMOVE: Section 5 — System Behaviors (Flags)
 
-<!-- Remove check_intra_cell_variation, check_stimulus_interleaving.
-     Remove all downstream references. Logic absorbed by prescription engine. -->
+Remove the entire Section 5, including:
+
+- `check_intra_cell_variation` function (lines 789–824 of `TDS_MTRX.py`)
+- `check_stimulus_interleaving` function (lines 828–851)
+- Section header and docstring framing them as “stateless flag functions”
+
+Also remove all downstream references:
+
+- `IMPLEMENTATION_ROADMAP` Stage 2 item 7 (test instructions for both flags)
+- `IMPLEMENTATION_ROADMAP` Stage 4 `log_workout` references to both functions
+- `log_workout` return value keys `repeat_exercise_flag` and
+  `repeat_stimulus_flag`
+- `get_all_exercises` docstring reference to `check_intra_cell_variation`
+
+The underlying data queries these functions perform — “which exercises have
+been used in this cell this week” and “what stimulus was last used for this
+exercise” — become internal steps within the prescription engine (Section
+4.11). They are not standalone outputs.
 
 ---
 
@@ -469,16 +485,118 @@ def add_user(self, username: str, display_name: str, email: str,
 
 ### Session Generation
 
-<!-- Generates a complete workout session, not a ranked menu.
-     Each slot: primary recommendation + dropdown variations
-     matching same stimulus/muscle category.
-     User modifies in real time before or during session. -->
+The prescription engine generates a complete workout session. Each slot in
+the session contains a primary exercise recommendation plus a short list of
+variations that satisfy the same stimulus type and sub-account. The user
+modifies, swaps, or accepts recommendations in real time before or during
+the session.
+
+The output is a session, not a ranked menu of cells.
+
+```python
+def build_session(user_id: int,
+                  matrix_plan: dict,
+                  records: list,
+                  exercises: dict,
+                  block_targets: dict,
+                  week_start: datetime.date,
+                  week_end: datetime.date,
+                  today: datetime.date) -> list:
+    """
+    Generates a workout session for today.
+
+    CALLER CONTRACT: All inputs are assembled by MtrxApp from the database.
+    This function is pure — no side effects, deterministic given same inputs.
+
+    INPUTS:
+        user_id:         int
+        matrix_plan:     dict[tuple, dict]   — hierarchical matrix with sub-accounts
+        records:         list[dict]           — this user's records
+        exercises:       dict[str, dict]      — full exercise library
+        block_targets:   dict                 — from active training block (Section 7.2)
+        week_start:      datetime.date
+        week_end:        datetime.date
+        today:           datetime.date
+
+    OUTPUT:
+        list of dicts, one per exercise slot in the session. Each dict:
+        {
+            'slot':              int,           — position in session (1-based)
+            'cell':              (str, str),    — (movement_plane, movement_type)
+            'sub_account':       str,           — sub-account name
+            'measurement_unit':  str,           — from sub-account
+            'primary': {
+                'exercise_name':     str,
+                'suggested_scheme':  str,       — canonical scheme key
+                'suggested_weight':  float | None,
+                'stimulus':          str,       — N/MT/MD/MS
+            },
+            'variations': [
+                {
+                    'exercise_name':     str,
+                    'suggested_scheme':  str,
+                    'suggested_weight':  float | None,
+                    'stimulus':          str,
+                },
+                ...
+            ],
+            'reason':            str,           — why this slot was filled this way
+        }
+
+    LOGIC:
+
+    1. COMPUTE SUB-ACCOUNT TARGETS
+       For each cell in matrix_plan, for each sub-account:
+           target = sub_account['weight']  (weekly target from the matrix)
+       If block_targets specifies overrides for specific sub-accounts,
+       apply those.
+
+    2. COMPUTE COVERAGE SO FAR
+       Filter records to this user, this week (week_start <= date <= today).
+       For each record, look up the exercise's cell and determine which
+       sub-account it serves via the exercise library.
+       Build:
+           sub_account_sessions: dict  — sessions completed per sub-account
+           cell_exercises:       dict  — exercise names used per cell
+           exercise_last_stim:   dict  — last stimulus per exercise
+
+    3. COMPUTE REMAINING VALUE
+       For each sub-account:
+           remaining = max(0, target - completed)
+       Weight by sub-account weight and remaining/target ratio.
+       Sort sub-accounts descending by weighted remaining value.
+
+    4. FILL SESSION SLOTS
+       For each slot (up to the session size):
+           Pick the highest-value unfilled sub-account.
+           Select a primary exercise:
+               - Not already used in this cell this week (prefer variety)
+               - Uses a stimulus not recently repeated for this exercise
+           Select 2–3 variations from the same sub-account that satisfy
+           the same stimulus category.
+           For each, compute suggested_weight via DDM if available,
+           using the sub-account's measurement_unit for field selection.
+
+    5. RETURN SESSION
+       Return the ordered list of slot dicts.
+    """
+    pass
+```
 
 ### Sub-Account Level Operation
 
-<!-- Targets expressed in each sub-account's measurement unit.
-     Remaining value calculation handles heterogeneous units.
-     Variety and stimulus rotation logic internal to engine. -->
+The engine operates at sub-account granularity:
+
+- Targets are expressed in each sub-account's measurement unit. A carry
+  sub-account’s deficit is measured in load × distance, not in reps.
+- Remaining value calculations handle heterogeneous units across the
+  hierarchy. Sub-accounts within the same cell may have different units
+  (e.g. Carry/Bracing has both `LOAD_DISTANCE` and `DURATION`).
+- Exercise-to-sub-account mapping uses the exercise library's
+  `movement_plane` and `movement_type` for cell lookup, then matches
+  to a sub-account based on the exercise's characteristics.
+- Variety and stimulus rotation logic (formerly in the removed flag
+  functions) is internal to steps 2 and 4 above.
 
 ---
 
@@ -486,7 +604,27 @@ def add_user(self, username: str, display_name: str, email: str,
 
 ### Remove Flag Keys
 
-<!-- Remove repeat_exercise_flag and repeat_stimulus_flag. -->
+Remove `repeat_exercise_flag` and `repeat_stimulus_flag` from the
+`log_workout` return value. These flags no longer exist as standalone
+concepts — the logic is internal to the prescription engine.
+
+Updated return value:
+
+```python
+{
+    'record_id':          int,
+    'ddm':                float | None,
+    'weight_suggestions': dict | None,
+}
+```
+
+The `MtrxApp.log_workout` method:
+1. Calls `db.add_record(...)` → returns `record_id`
+2. Calls `compute_ddm(...)` with the user's records for this exercise
+3. Calls `build_weight_guidance(...)` if DDM is available
+4. Returns the dict above
+
+No flag function calls. No flag keys.
 
 ---
 
@@ -494,10 +632,81 @@ def add_user(self, username: str, display_name: str, email: str,
 
 ### User-Defined Programming Periods
 
-<!-- Remove hardcoded 5-week block logic.
-     Blocks are user-defined with goal targets at sub-account level.
-     Programming view tracks budget vs. actual across active block.
-     Progress tracking analogous to FloQast month-end close view. -->
+Remove the hardcoded `weeks_per_block=4` (and the v1 update's proposed
+`weeks_per_block=5`). Training blocks are user-defined programming periods
+with explicit start dates, end dates, and goal targets.
+
+```python
+self.__training_blocks: dict[int, list[dict]]
+
+# Example state:
+# {
+#     1: [
+#         {
+#             'block_id':     1,
+#             'name':         'Spring Strength Block',
+#             'start_date':   datetime.date(2026, 1, 5),
+#             'end_date':     datetime.date(2026, 3, 1),
+#             'targets': {
+#                 ('Sagittal', 'Push'): {
+#                     'Vertical Press':   {'weekly_target': 3, 'unit': 'VOLUME'},
+#                     'Horizontal Press': {'weekly_target': 3, 'unit': 'VOLUME'},
+#                 },
+#                 ('Sagittal', 'Hinge'): {
+#                     'Bilateral Hinge':  {'weekly_target': 2, 'unit': 'VOLUME'},
+#                 },
+#                 # ... targets for sub-accounts the user wants to emphasize
+#             },
+#         },
+#     ],
+# }
+```
+
+The programming view tracks budget vs. actual across the active block:
+
+- **Budget**: The `targets` dict above — what the user planned to
+  accomplish per sub-account per week for this block.
+- **Actual**: Derived from `records` filtered to the block's date range,
+  aggregated by sub-account and week.
+- **Progress**: Weekly and cumulative completion ratios, displayed as a
+  tracking view showing each sub-account's status (ahead / on track /
+  behind / not started).
+
+This is analogous to a month-end close tracker: a structured view of
+what's done, what's remaining, and what's overdue across defined
+accounting periods.
+
+**Methods:**
+
+```python
+def add_training_block(self, user_id: int, name: str,
+                       start_date: datetime.date, end_date: datetime.date,
+                       targets: dict) -> int:
+    # 1. Validate user_id exists
+    # 2. Validate end_date > start_date
+    # 3. Validate target sub-accounts exist in user's matrix_plan
+    # 4. Validate measurement units match sub-account definitions
+    # 5. Append to self.__training_blocks[user_id]
+    # 6. Return block_id
+
+def get_active_block(self, user_id: int,
+                     as_of: datetime.date = None) -> dict | None:
+    # Returns the block where start_date <= as_of <= end_date.
+    # Returns None if no block covers the date.
+
+def get_block_progress(self, user_id: int, block_id: int) -> dict:
+    # Returns budget vs. actual for each sub-account in the block,
+    # broken down by week.
+```
+
+**`__init__` changes:**
+- Add `self.__block_counter = 1`
+- Add `self.__training_blocks = {}`
+- `add_user` initializes `self.__training_blocks[user_id] = []`
+
+The existing `get_block_label` function is retained for display labeling
+but its `weeks_per_block` parameter becomes informational, not structural.
+Blocks are no longer derived from arithmetic on `PROGRAM_START_DATE`.
 
 ---
 
