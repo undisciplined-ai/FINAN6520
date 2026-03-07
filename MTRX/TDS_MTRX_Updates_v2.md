@@ -712,13 +712,78 @@ Blocks are no longer derived from arithmetic on `PROGRAM_START_DATE`.
 
 ## ADD: Section 8 — Competitive Platform (Intent Specification)
 
+This section defines the constraints the competitive layer must satisfy.
+No formulas, data structures, or calculations are specified. The data model
+from preceding sections is sufficient to support all requirements below
+when the mechanics are defined.
+
 ### Deterministic Scoring
+
+The scoring system produces the same result for any matrix configuration
+given the same inputs. It is not based on adherence percentages or
+quality-of-execution deviation. The specific formula is not yet defined.
+
 ### Relative Performance
+
+The core metric measures relative performance — how much a user moved
+toward their own goal given their own constraints. Absolute comparisons
+(who lifted more) are not the basis of competition. The specific
+measurement methodology is not yet defined.
+
 ### Handicap System
+
+A handicap enables competition across users with fundamentally different
+objectives, strategies, time commitments, ages, experience levels, and
+starting points. The handicap adjusts scores so that a 62-year-old
+training 3 days/week for functional fitness competes fairly against a
+28-year-old training 5 days/week for powerlifting. The handicap formula
+is not yet defined.
+
 ### Peer Group Comparison
+
+Users are compared within peer groups — people with similar strategy,
+configuration, and matrix selection. Analogous to industry comparables
+in financial analysis. Peer grouping criteria are not yet defined.
+
 ### Multi-Dimensional Leaderboards
+
+Leaderboards are viewable across many dimensions, modeled after the
+Tour de France jersey system:
+- Yellow jersey: balanced/overall matrix leader
+- Additional jerseys for other dimensions of excellence (TBD)
+
+Users view standings from multiple perspectives simultaneously.
+Leaderboards are filterable by lift, sub-account, cell, plane, and
+user-defined dimensions. The specific dimensions are not yet defined.
+
 ### Radar Grid Positioning
+
+Each user's matrix configuration places them on a radar/spider chart
+defined by the preset matrix configurations. This positioning determines:
+- Eligibility for specific challenges
+- Peer group membership for direct comparison
+- Handicap calibration inputs
+
+The radar grid dimensions and positioning logic are not yet defined.
+
 ### Temporal Challenges
+
+Time-bound competitive formats layered on top of the ongoing system:
+- Monthly competitions
+- Centralities-of-effort challenges (concentrated effort windows)
+- Other structured events
+
+Challenge formats and eligibility rules are not yet defined.
+
+### Data Model Dependencies
+
+- User identity (Section 3.1) carries `age` and `training_experience`.
+- Configuration ledger (Section 3.1) records strategy over time, feeding
+  radar grid positioning.
+- Workout records (Section 3.4) are the raw input to any scoring formula.
+- Preset matrix configs (Section 1.4) define the axes of the radar grid.
+- Training blocks (Section 7.2) provide the budget-vs-actual structure
+  that scoring formulas can reference.
 
 ---
 
@@ -726,24 +791,62 @@ Blocks are no longer derived from arithmetic on `PROGRAM_START_DATE`.
 
 ### API Connection Points
 
-<!-- Python layer exposes structured, well-defined API endpoints
-     for AI agent consumption. -->
+The Python layer exposes structured, well-defined methods optimized for
+AI agent consumption. Every data entity and derived metric is accessible
+through a consistent interface that returns JSON-serializable dicts or
+lists. The API surface is designed so that an LLM with tool-calling
+capability can discover, query, and combine data without custom glue code.
+
+Key design constraints:
+- Every public method on `MtrxApp` is a potential tool endpoint.
+- Return types are always `dict`, `list[dict]`, or `pd.DataFrame`
+  (convertible to dict via `.to_dict()`).
+- Method names and parameter names are self-documenting for LLM tool
+  descriptions.
+- No method requires understanding internal state to call correctly.
 
 ### AI-Driven Jupyter Notebook Integration
 
-<!-- LLM agent navigates the data access layer to generate:
-     charts, graphs, gap analysis, natural language recommendations.
-     Not feature-per-dataset — a general data access layer. -->
+An LLM agent navigates the data access layer to generate Jupyter notebook
+cells containing charts, graphs, gap analysis, and natural language
+recommendations. The agent is not a feature-per-dataset tool — it is a
+general analyst that can combine any available data.
+
+Capabilities:
+- Query any combination of records, matrix state, measurements,
+  configuration history, block progress, and prescription output.
+- Generate visualizations using matplotlib, plotly, or other libraries
+  available in the notebook environment.
+- Produce natural language interpretation of data (trends, gaps,
+  recommendations) alongside the visualizations.
+- Respond to freeform user questions about their training data.
 
 ### Dynamic Filtering & Complex Visualizations
 
-<!-- Leaderboards filterable by lift, dimension, peer group.
-     Historical data, matrix history, body metrics all feed same engine. -->
+All data views support dynamic filtering:
+- Leaderboards filterable by lift, sub-account, cell, plane, peer group,
+  time period, and user-defined dimensions.
+- Historical data viewable at any granularity (session, week, block,
+  all-time).
+- Matrix history (from config ledger) visualized as strategy evolution
+  over time.
+- Body metrics (from measurements) overlaid with training volume and
+  performance trends.
+
+The Python layer provides the filtering and aggregation logic. The
+notebook environment handles rendering.
 
 ### Agentic Programming Modification
 
-<!-- The visualization agent can modify user programming
-     based on its analysis. -->
+The visualization agent can modify user programming based on its analysis:
+- Adjust sub-account weights in the matrix.
+- Create or modify training blocks.
+- Suggest prescription engine parameter changes.
+
+All modifications flow through the same `MtrxApp` methods used by direct
+user interaction. The agent does not bypass the data access layer — it
+uses the same API surface, ensuring all validation, ledger snapshots,
+and invariants are maintained.
 
 ---
 
