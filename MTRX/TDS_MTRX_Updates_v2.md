@@ -45,15 +45,92 @@ structural change.
 
 ### Hierarchical Cell Structure
 
-<!-- Flat dict[tuple, str] → hierarchical parent/sub-account model.
-     Each cell is a parent account. Sub-accounts carry individual weights.
-     Parent weight = sum of children. Resolution increases by adding children. -->
+The current flat `dict[tuple, str]` mapping each `(plane, type)` to a priority
+string is replaced by a hierarchical parent/sub-account model.
+
+```python
+# Each cell is a parent account. Its weight is always the sum of its children.
+# Sub-accounts carry individual weights and declare their own measurement unit.
+# Resolution increases by adding children — no structural change at the parent.
+#
+# Structure per user:
+#   dict[tuple, dict]
+#   Key:   (movement_plane, movement_type)
+#   Value: {
+#       'sub_accounts': [
+#           {
+#               'name':             str,       # e.g. 'Vertical Press'
+#               'weight':           int,       # sub-account weight
+#               'measurement_unit': str,       # key from MEASUREMENT_UNITS
+#               'exercise_examples': list[str], # reference only, not enforced
+#           },
+#           ...
+#       ],
+#   }
+#
+# Parent weight = sum(sa['weight'] for sa in cell['sub_accounts'])
+# Parent weight is never stored — always derived. This eliminates sync errors.
+#
+# Example:
+# {
+#     ('Sagittal', 'Push'): {
+#         'sub_accounts': [
+#             {'name': 'Vertical Press',   'weight': 3, 'measurement_unit': 'VOLUME',
+#              'exercise_examples': ['Overhead Press', 'Push Press']},
+#             {'name': 'Horizontal Press', 'weight': 3, 'measurement_unit': 'VOLUME',
+#              'exercise_examples': ['Bench Press', 'Floor Press']},
+#             {'name': 'Downward Press',   'weight': 1, 'measurement_unit': 'VOLUME',
+#              'exercise_examples': ['Dips', 'Decline Press']},
+#         ],
+#     },
+#     ('Sagittal', 'Carry/Bracing'): {
+#         'sub_accounts': [
+#             {'name': 'Loaded Carry',  'weight': 2, 'measurement_unit': 'LOAD_DISTANCE',
+#              'exercise_examples': ['Farmer Walk', 'Front Rack Carry']},
+#             {'name': 'Static Brace',  'weight': 1, 'measurement_unit': 'DURATION',
+#              'exercise_examples': ['Plank', 'Dead Bug']},
+#         ],
+#     },
+# }
+```
+
+The tuple key `(movement_plane, movement_type)` is preserved as the canonical
+join key. Every downstream lookup — exercise library, records, views — continues
+to use this key. The change is beneath it: what was a string (`'High'`) is now
+a dict with sub-accounts.
 
 ### Measurement Unit Taxonomy
 
-<!-- Sub-accounts declare their own measurement unit.
-     Cannot assume sets × reps × weight universally.
-     Define canonical measurement types as constants. -->
+Sub-accounts declare their own measurement unit. The system cannot assume
+sets × reps × weight universally — carries are measured by load × distance,
+bracing by duration, locomotion by distance.
+
+```python
+MEASUREMENT_UNITS = {
+    'VOLUME':        {'fields': ['sets', 'reps', 'weight'],
+                      'formula': 'sets * reps * weight'},
+    'DURATION':      {'fields': ['sets', 'duration_seconds'],
+                      'formula': 'sets * duration_seconds'},
+    'DISTANCE':      {'fields': ['distance_meters'],
+                      'formula': 'distance_meters'},
+    'LOAD_DISTANCE': {'fields': ['weight', 'distance_meters'],
+                      'formula': 'weight * distance_meters'},
+    'REPS_ONLY':     {'fields': ['sets', 'reps'],
+                      'formula': 'sets * reps'},
+}
+```
+
+This constant lives in `mtrx_constants.py`. The exercise library does not need
+to change — the measurement unit is a property of the sub-account, not the
+exercise. The same exercise (e.g. Farmer Walk) always maps to a cell; the
+sub-account within that cell defines how the exercise's output is measured.
+
+**Downstream impact on `add_record`**: The current record schema assumes
+`sets`, `reps`, `bonus_reps`, `weight` for every record. Records logged against
+sub-accounts with non-VOLUME measurement units require the fields defined in
+`MEASUREMENT_UNITS[unit]['fields']`. The record schema expands to include
+`duration_seconds` and `distance_meters` as nullable fields. Validation at
+log time checks that the required fields for the sub-account's unit are present.
 
 ### V1 Chart of Accounts
 
@@ -181,8 +258,43 @@ Measurement unit key:
 
 ### Preset Configs
 
-<!-- Presets define sub-account weights, not flat priority strings.
-     Each preset is a full chart of accounts with weighted sub-accounts. -->
+Presets define sub-account weights for every cell, not flat priority strings.
+Each preset is a complete chart of accounts with weighted sub-accounts.
+
+```python
+PRESET_MATRIX_CONFIGS = {
+    'GPP': {
+        'name': 'General Physical Preparedness',
+        'grid': {
+            ('Sagittal', 'Push'): {
+                'sub_accounts': [
+                    {'name': 'Vertical Press',   'weight': 3, 'measurement_unit': 'VOLUME',
+                     'exercise_examples': ['Overhead Press', 'Push Press']},
+                    {'name': 'Horizontal Press', 'weight': 3, 'measurement_unit': 'VOLUME',
+                     'exercise_examples': ['Bench Press', 'Floor Press']},
+                    {'name': 'Downward Press',   'weight': 1, 'measurement_unit': 'VOLUME',
+                     'exercise_examples': ['Dips', 'Decline Press']},
+                ],
+            },
+            # ... all 24 cells with sub-accounts and weights
+        },
+    },
+    # Additional presets:
+    # 'STRENGTH':    {...},
+    # 'HYPERTROPHY': {...},
+    # 'POWERLIFTING': {...},
+    # 'FUNCTIONAL':  {...},
+}
+
+DEFAULT_PRESET = 'GPP'
+```
+
+The current `DEFAULT_MATRIX_GRID` values are replaced by the `'GPP'` preset.
+The old `PRIORITY_TARGETS` dict (`{'High': 3, 'Medium': 2, 'Low': 1, 'N/A': 0}`)
+is no longer the mechanism — sub-account weights express the same intent with
+higher resolution. `PRIORITY_TARGETS` may be retained as a reference mapping
+for backward compatibility during migration but is not used by the prescription
+engine.
 
 ---
 
@@ -207,21 +319,85 @@ removal. No separate code changes needed beyond the constant definitions.
 
 ### Expanded Identity Fields
 
-<!-- Add age and training_experience as data-only fields.
-     Not used in any calculation or handicap logic. -->
+```python
+def add_user(self, username: str, display_name: str, email: str,
+             age: int = None, training_experience: int = None) -> int:
+```
+
+`age` and `training_experience` are stored on the user record as data-only
+fields. They are not inputs to any calculation, scoring, or handicap logic.
+
+```python
+# Example state after expansion:
+# {
+#     1: {
+#         'username':            'kharmer',
+#         'display_name':        'Kai Harmer',
+#         'email':               'kai@example.com',
+#         'join_date':           datetime.date(2026, 1, 5),
+#         'age':                 38,
+#         'training_experience': 10,
+#     },
+# }
+```
 
 ### Configuration Ledger
 
-### Simplified Definition
+An append-only, timestamped snapshot of the full matrix state. A new snapshot
+is appended whenever any matrix modification occurs (via `update_matrix_cell`,
+`add_sub_account`, or preset change). The ledger provides the budget-side
+historical data for budget-vs-actual analysis.
 
-<!-- Append-only timestamped snapshots of the full matrix state.
-     Triggered on any matrix modification.
-     No training parameters (days_per_week, exercises_per_session).
-     Budget-side historical data for budget-vs-actual analysis. -->
+No training parameters (`days_per_week`, `exercises_per_session`) are stored
+on the ledger. It captures the matrix structure only.
+
+```python
+self.__config_ledger: dict[int, list[dict]]
+
+# Example state:
+# {
+#     1: [
+#         {
+#             'snapshot_id':    1,
+#             'timestamp':      datetime.datetime(2026, 1, 5, 10, 0, 0),
+#             'matrix_state':   { ... },  # deep copy of __matrix_plans[user_id]
+#         },
+#         {
+#             'snapshot_id':    2,
+#             'timestamp':      datetime.datetime(2026, 2, 14, 8, 30, 0),
+#             'matrix_state':   { ... },
+#         },
+#     ],
+# }
+```
 
 ### Methods
 
-<!-- add_config_snapshot, get_active_config, get_config_ledger -->
+```python
+def save_config_snapshot(self, user_id: int) -> int:
+    # 1. Validate user_id exists
+    # 2. snapshot_id = self.__config_counter
+    # 3. Deep copy current __matrix_plans[user_id]
+    # 4. Append {'snapshot_id': snapshot_id, 'timestamp': datetime.datetime.now(),
+    #            'matrix_state': deep_copy}
+    # 5. self.__config_counter += 1
+    # 6. return snapshot_id
+    #
+    # Called internally by update_matrix_cell and any method that
+    # modifies the matrix structure. Not a public user action.
+
+def get_active_config(self, user_id: int) -> dict:
+    # Returns the most recent snapshot's matrix_state (last entry).
+    # Returns current __matrix_plans[user_id] if no snapshots exist.
+
+def get_config_ledger(self, user_id: int) -> list:
+    # Returns full snapshot history (list of dicts, deep copies).
+```
+
+**`__init__` changes:**
+- Add `self.__config_counter = 1`
+- Add `self.__config_ledger = {}`
+- `add_user` initializes `self.__config_ledger[user_id] = []`
 
 ---
 
@@ -229,12 +405,56 @@ removal. No separate code changes needed beyond the constant definitions.
 
 ### Updated Data Model
 
-<!-- __matrix_plans changes from dict[int, dict[tuple, str]]
-     to the hierarchical structure matching the chart of accounts. -->
+`__matrix_plans` changes from `dict[int, dict[tuple, str]]` to
+`dict[int, dict[tuple, dict]]` matching the hierarchical structure defined
+in Section 1.4.
+
+The inner value changes from a priority string (e.g. `'High'`) to a dict
+containing `'sub_accounts'` — a list of sub-account dicts each with `name`,
+`weight`, `measurement_unit`, and `exercise_examples`.
+
+All existing methods that read or write matrix plans are updated:
+
+```python
+def update_matrix_cell(self, user_id: int, movement_plane: str,
+                       movement_type: str, sub_accounts: list) -> None:
+    # 1. Validate user_id, movement_plane, movement_type
+    # 2. Validate each sub-account has required keys
+    # 3. Validate measurement_unit in MEASUREMENT_UNITS for each sub-account
+    # 4. self.__matrix_plans[user_id][(movement_plane, movement_type)] = {
+    #        'sub_accounts': sub_accounts
+    #    }
+    # 5. self.save_config_snapshot(user_id)   # trigger ledger snapshot
+
+def add_sub_account(self, user_id: int, movement_plane: str,
+                    movement_type: str, name: str, weight: int,
+                    measurement_unit: str,
+                    exercise_examples: list = None) -> None:
+    # Appends a sub-account to an existing cell.
+    # Triggers save_config_snapshot.
+
+def get_matrix_plan(self, user_id: int) -> dict:
+    # Returns deep copy of the hierarchical matrix.
+
+def get_cell_weight(self, user_id: int, movement_plane: str,
+                    movement_type: str) -> int:
+    # Returns sum of sub-account weights for the cell (derived, never stored).
+```
 
 ### Seeding from Presets
 
-<!-- Seeding reads from selected preset's hierarchical grid. -->
+Seeding in `add_user` changes from `dict(DEFAULT_MATRIX_GRID)` to a deep copy
+of `PRESET_MATRIX_CONFIGS[preset_key]['grid']`. The `add_user` signature
+expands to accept an optional `preset_key` parameter:
+
+```python
+def add_user(self, username: str, display_name: str, email: str,
+             age: int = None, training_experience: int = None,
+             preset_key: str = None) -> int:
+    # ...
+    # preset = preset_key or DEFAULT_PRESET
+    # self.__matrix_plans[user_id] = deep_copy(PRESET_MATRIX_CONFIGS[preset]['grid'])
+```
 
 ---
 
