@@ -14,7 +14,19 @@ itself as net-new. Changes are grouped by type: MODIFY, REMOVE, ADD.
 
 ## System Identity
 
-<!-- Fitness accounting system analogy. Budget vs. actual. Absorb and recalibrate. -->
+The system is a **fitness accounting system**. It operates on a budget-vs-actual
+model: the matrix defines the budget (what the user intends to train), workout
+records capture the actual (what was done), and the prescription engine
+continuously recalculates forward-looking recommendations from the delta.
+
+Each accounting period (week) resets. The system does not penalize deviation
+from plan — it absorbs reality and recalibrates. A skipped session redistributes
+remaining budget across remaining days. An off-plan workout is recorded as
+actual activity and reduces the corresponding cell's remaining need.
+
+The Python layer produces deterministic, structured outputs. An LLM integration
+layer sits above it, consuming the Python layer's output as callable tool data
+and presenting it conversationally.
 
 ---
 
@@ -22,8 +34,14 @@ itself as net-new. Changes are grouped by type: MODIFY, REMOVE, ADD.
 
 ### Remove Neutral Plane
 
-<!-- 4×8 grid (32 cells) → 3×8 grid (24 cells). Neutral was a placeholder.
-     Non-compliant exercises get new parent accounts as needed. -->
+The current 4×8 grid (32 cells) becomes a 3×8 grid (24 cells). The Neutral
+plane is removed. All 8 Neutral cells in `DEFAULT_MATRIX_GRID` are set to
+`'N/A'` — they carry no exercises and serve no tracking purpose.
+
+Exercises that do not map to Sagittal, Frontal, or Transverse receive a new
+parent account in the matrix rather than being assigned to a catch-all plane.
+The hierarchical structure (below) supports adding parent accounts without
+structural change.
 
 ### Hierarchical Cell Structure
 
@@ -172,8 +190,16 @@ Measurement unit key:
 
 ### Remove Neutral from MOVEMENT_PLANES
 
-<!-- MOVEMENT_PLANES = {'Sagittal', 'Frontal', 'Transverse'}
-     MOVEMENT_PLANES_ORDERED = ['Sagittal', 'Frontal', 'Transverse'] -->
+```python
+MOVEMENT_PLANES  = {'Sagittal', 'Frontal', 'Transverse'}
+MOVEMENT_PLANES_ORDERED = ['Sagittal', 'Frontal', 'Transverse']
+```
+
+All validation checks, iteration loops, and grid-building logic that reference
+`MOVEMENT_PLANES` or `MOVEMENT_PLANES_ORDERED` automatically reflect the
+removal. No separate code changes needed beyond the constant definitions.
+
+`MOVEMENT_TYPES` and `MOVEMENT_TYPES_ORDERED` are unchanged.
 
 ---
 
