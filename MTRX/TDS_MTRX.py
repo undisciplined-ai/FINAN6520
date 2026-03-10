@@ -28,12 +28,12 @@ Each layer imports only from the layer(s) below it.
             |
     mtrx_app.py         <- imports: mtrx_database, mtrx_functions, pandas, matplotlib
 
-WHY THIS SEPARATION ELIMINATES TELEPHONE-GAME ERRORS:
+WHY THIS SEPARATION ELIMINATES ERRORS:
 Every derived metric is defined once, as a pure function in mtrx_functions.py,
 with explicit inputs and outputs. The database never recomputes anything -- it
 stores only raw records. The app never accesses raw state directly -- it calls
 database methods and passes the results to functions. A bug in any calculation
-is isolated to one function in one file.
+should beisolated to one function in one file.
 
 """
 
@@ -67,6 +67,7 @@ sole purpose is to supply adaptation_days, fatigue_days, and hex by stimulus key
 
 CANONICAL_SCHEMES = {
     '3x5':  {'sets': 3, 'reps': 5,  'stimulus': 'MT', 'pct_of_ddm': 0.80, 'priority': 'Primary'},
+    
     '3x10': {'sets': 3, 'reps': 10, 'stimulus': 'MD', 'pct_of_ddm': 0.65, 'priority': 'Primary'},
     '3x2':  {'sets': 3, 'reps': 2,  'stimulus': 'N',  'pct_of_ddm': 0.95, 'priority': 'Secondary'},
     '3x20': {'sets': 3, 'reps': 20, 'stimulus': 'MS', 'pct_of_ddm': 0.50, 'priority': 'Secondary'},

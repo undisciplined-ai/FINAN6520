@@ -1,8 +1,8 @@
 # MTRX — TDS Update Specification v2
 
 This document specifies all changes to `TDS_MTRX.py` required to bring the
-system from its current state (a backward-looking fitness accounting system)
-to its desired state (a fitness accounting system with an adaptive
+system from its current state (a backward-looking training tracking system)
+to its desired state (a training management system with an adaptive
 forward-looking prescription engine, a competitive platform layer, and an
 AI-driven data access and visualization layer).
 
@@ -14,23 +14,15 @@ itself as net-new. Changes are grouped by type: MODIFY, REMOVE, ADD.
 
 ## System Identity
 
-The system is a **fitness accounting system**. It operates on a budget-vs-actual
-model: the matrix defines the budget (what the user intends to train), workout
-records capture the actual (what was done), and the prescription engine
-continuously recalculates forward-looking recommendations from the delta.
+The system tracks movement training against a user-defined plan, generates forward-looking session recommendations, and continuously recalibrates as sessions are completed. The Python layer produces deterministic, structured outputs. An LLM integration layer sits above it, consuming the Python layer's output as callable tool data and presenting it conversationally.
 
-Each accounting period (week) resets. The system does not penalize deviation
-from plan — it absorbs reality and recalibrates. A skipped session redistributes
-remaining budget across remaining days. An off-plan workout is recorded as
-actual activity and reduces the corresponding cell's remaining need.
+### Design Philosophy
 
-The Python layer produces deterministic, structured outputs. An LLM integration
-layer sits above it, consuming the Python layer's output as callable tool data
-and presenting it conversationally.
+The training plan is a living target, not a rigid schedule. Each training week resets. Deviation from plan is absorbed and redistributed — a skipped session shifts remaining volume across remaining days; an off-plan workout is logged and reduces the corresponding cell's remaining need. The prescription engine continuously recalculates from the delta between what was planned and what was completed. The system does not penalize deviation; it recalibrates.
 
 ---
 
-## MODIFY: Section 1.4 — Matrix Structure (Chart of Accounts)
+## MODIFY: Section 1.4 — Matrix Structure
 
 ### Remove Neutral Plane
 
@@ -39,28 +31,28 @@ plane is removed. All 8 Neutral cells in `DEFAULT_MATRIX_GRID` are set to
 `'N/A'` — they carry no exercises and serve no tracking purpose.
 
 Exercises that do not map to Sagittal, Frontal, or Transverse receive a new
-parent account in the matrix rather than being assigned to a catch-all plane.
-The hierarchical structure (below) supports adding parent accounts without
+parent cell in the matrix rather than being assigned to a catch-all plane.
+The hierarchical structure (below) supports adding parent cells without
 structural change.
 
 ### Hierarchical Cell Structure
 
 The current flat `dict[tuple, str]` mapping each `(plane, type)` to a priority
-string is replaced by a hierarchical parent/sub-account model.
+string is replaced by a hierarchical parent/category model.
 
 ```python
-# Each cell is a parent account. Its weight is always the sum of its children.
-# Sub-accounts carry individual weights and declare their own measurement unit.
+# Each cell is a parent node. Its weight is always the sum of its children.
+# Categories carry individual weights and declare their own measurement unit.
 # Resolution increases by adding children — no structural change at the parent.
 #
 # Structure per user:
 #   dict[tuple, dict]
 #   Key:   (movement_plane, movement_type)
 #   Value: {
-#       'sub_accounts': [
+#       'categories': [
 #           {
 #               'name':             str,       # e.g. 'Vertical Press'
-#               'weight':           int,       # sub-account weight
+#               'weight':           int,       # category weight
 #               'measurement_unit': str,       # key from MEASUREMENT_UNITS
 #               'exercise_examples': list[str], # reference only, not enforced
 #           },
@@ -68,13 +60,13 @@ string is replaced by a hierarchical parent/sub-account model.
 #       ],
 #   }
 #
-# Parent weight = sum(sa['weight'] for sa in cell['sub_accounts'])
+# Parent weight = sum(cat['weight'] for cat in cell['categories'])
 # Parent weight is never stored — always derived. This eliminates sync errors.
 #
 # Example:
 # {
 #     ('Sagittal', 'Push'): {
-#         'sub_accounts': [
+#         'categories': [
 #             {'name': 'Vertical Press',   'weight': 3, 'measurement_unit': 'VOLUME',
 #              'exercise_examples': ['Overhead Press', 'Push Press']},
 #             {'name': 'Horizontal Press', 'weight': 3, 'measurement_unit': 'VOLUME',
@@ -84,7 +76,7 @@ string is replaced by a hierarchical parent/sub-account model.
 #         ],
 #     },
 #     ('Sagittal', 'Carry/Bracing'): {
-#         'sub_accounts': [
+#         'categories': [
 #             {'name': 'Loaded Carry',  'weight': 2, 'measurement_unit': 'LOAD_DISTANCE',
 #              'exercise_examples': ['Farmer Walk', 'Front Rack Carry']},
 #             {'name': 'Static Brace',  'weight': 1, 'measurement_unit': 'DURATION',
@@ -97,11 +89,11 @@ string is replaced by a hierarchical parent/sub-account model.
 The tuple key `(movement_plane, movement_type)` is preserved as the canonical
 join key. Every downstream lookup — exercise library, records, views — continues
 to use this key. The change is beneath it: what was a string (`'High'`) is now
-a dict with sub-accounts.
+a dict with categories.
 
 ### Measurement Unit Taxonomy
 
-Sub-accounts declare their own measurement unit. The system cannot assume
+Categories declare their own measurement unit. The system cannot assume
 sets × reps × weight universally — carries are measured by load × distance,
 bracing by duration, locomotion by distance.
 
@@ -121,21 +113,21 @@ MEASUREMENT_UNITS = {
 ```
 
 This constant lives in `mtrx_constants.py`. The exercise library does not need
-to change — the measurement unit is a property of the sub-account, not the
+to change — the measurement unit is a property of the category, not the
 exercise. The same exercise (e.g. Farmer Walk) always maps to a cell; the
-sub-account within that cell defines how the exercise's output is measured.
+category within that cell defines how the exercise's output is measured.
 
 **Downstream impact on `add_record`**: The current record schema assumes
 `sets`, `reps`, `bonus_reps`, `weight` for every record. Records logged against
-sub-accounts with non-VOLUME measurement units require the fields defined in
+categories with non-VOLUME measurement units require the fields defined in
 `MEASUREMENT_UNITS[unit]['fields']`. The record schema expands to include
 `duration_seconds` and `distance_meters` as nullable fields. Validation at
-log time checks that the required fields for the sub-account's unit are present.
+log time checks that the required fields for the category's unit are present.
 
-### V1 Chart of Accounts
+### Initial Cell Definitions
 
-The 24-cell matrix with initial sub-accounts per cell. 3 planes × 8
-movement types. Each sub-account lists its measurement unit. Parent weight
+The 24-cell matrix with initial categories per cell. 3 planes × 8
+movement types. Each category lists its measurement unit. Parent weight
 = sum of child weights. Resolution increases by adding children without
 structural change.
 
@@ -258,8 +250,8 @@ Measurement unit key:
 
 ### Preset Configs
 
-Presets define sub-account weights for every cell, not flat priority strings.
-Each preset is a complete chart of accounts with weighted sub-accounts.
+Presets define category weights for every cell, not flat priority strings.
+Each preset is a complete set of weighted categories per cell.
 
 ```python
 PRESET_MATRIX_CONFIGS = {
@@ -267,7 +259,7 @@ PRESET_MATRIX_CONFIGS = {
         'name': 'General Physical Preparedness',
         'grid': {
             ('Sagittal', 'Push'): {
-                'sub_accounts': [
+                'categories': [
                     {'name': 'Vertical Press',   'weight': 3, 'measurement_unit': 'VOLUME',
                      'exercise_examples': ['Overhead Press', 'Push Press']},
                     {'name': 'Horizontal Press', 'weight': 3, 'measurement_unit': 'VOLUME',
@@ -276,7 +268,7 @@ PRESET_MATRIX_CONFIGS = {
                      'exercise_examples': ['Dips', 'Decline Press']},
                 ],
             },
-            # ... all 24 cells with sub-accounts and weights
+            # ... all 24 cells with categories and weights
         },
     },
     # Additional presets:
@@ -291,10 +283,8 @@ DEFAULT_PRESET = 'GPP'
 
 The current `DEFAULT_MATRIX_GRID` values are replaced by the `'GPP'` preset.
 The old `PRIORITY_TARGETS` dict (`{'High': 3, 'Medium': 2, 'Low': 1, 'N/A': 0}`)
-is no longer the mechanism — sub-account weights express the same intent with
-higher resolution. `PRIORITY_TARGETS` may be retained as a reference mapping
-for backward compatibility during migration but is not used by the prescription
-engine.
+is no longer the mechanism — category weights express the same intent with
+higher resolution. `PRIORITY_TARGETS` is removed.
 
 ---
 
@@ -315,7 +305,7 @@ removal. No separate code changes needed beyond the constant definitions.
 
 ---
 
-## MODIFY: Section 3.1 — Users & Configuration Ledger
+## MODIFY: Section 3.1 — Users & Plan History
 
 ### Expanded Identity Fields
 
@@ -341,18 +331,18 @@ fields. They are not inputs to any calculation, scoring, or handicap logic.
 # }
 ```
 
-### Configuration Ledger
+### Plan History
 
 An append-only, timestamped snapshot of the full matrix state. A new snapshot
 is appended whenever any matrix modification occurs (via `update_matrix_cell`,
-`add_sub_account`, or preset change). The ledger provides the budget-side
-historical data for budget-vs-actual analysis.
+`add_category`, or preset change). The plan history provides plan-side data
+for plan-vs-completed analysis.
 
 No training parameters (`days_per_week`, `exercises_per_session`) are stored
-on the ledger. It captures the matrix structure only.
+in the plan history. It captures the matrix structure only.
 
 ```python
-self.__config_ledger: dict[int, list[dict]]
+self.__plan_history: dict[int, list[dict]]
 
 # Example state:
 # {
@@ -390,14 +380,14 @@ def get_active_config(self, user_id: int) -> dict:
     # Returns the most recent snapshot's matrix_state (last entry).
     # Returns current __matrix_plans[user_id] if no snapshots exist.
 
-def get_config_ledger(self, user_id: int) -> list:
-    # Returns full snapshot history (list of dicts, deep copies).
+def get_plan_history(self, user_id: int) -> list:
+    # Returns full plan history (list of dicts, deep copies).
 ```
 
 **`__init__` changes:**
 - Add `self.__config_counter = 1`
-- Add `self.__config_ledger = {}`
-- `add_user` initializes `self.__config_ledger[user_id] = []`
+- Add `self.__plan_history = {}`
+- `add_user` initializes `self.__plan_history[user_id] = []`
 
 ---
 
@@ -410,27 +400,27 @@ def get_config_ledger(self, user_id: int) -> list:
 in Section 1.4.
 
 The inner value changes from a priority string (e.g. `'High'`) to a dict
-containing `'sub_accounts'` — a list of sub-account dicts each with `name`,
+containing `'categories'` — a list of category dicts each with `name`,
 `weight`, `measurement_unit`, and `exercise_examples`.
 
 All existing methods that read or write matrix plans are updated:
 
 ```python
 def update_matrix_cell(self, user_id: int, movement_plane: str,
-                       movement_type: str, sub_accounts: list) -> None:
+                       movement_type: str, categories: list) -> None:
     # 1. Validate user_id, movement_plane, movement_type
-    # 2. Validate each sub-account has required keys
-    # 3. Validate measurement_unit in MEASUREMENT_UNITS for each sub-account
+    # 2. Validate each category has required keys
+    # 3. Validate measurement_unit in MEASUREMENT_UNITS for each category
     # 4. self.__matrix_plans[user_id][(movement_plane, movement_type)] = {
-    #        'sub_accounts': sub_accounts
+    #        'categories': categories
     #    }
-    # 5. self.save_config_snapshot(user_id)   # trigger ledger snapshot
+    # 5. self.save_config_snapshot(user_id)   # trigger plan history snapshot
 
-def add_sub_account(self, user_id: int, movement_plane: str,
-                    movement_type: str, name: str, weight: int,
-                    measurement_unit: str,
-                    exercise_examples: list = None) -> None:
-    # Appends a sub-account to an existing cell.
+def add_category(self, user_id: int, movement_plane: str,
+                 movement_type: str, name: str, weight: int,
+                 measurement_unit: str,
+                 exercise_examples: list = None) -> None:
+    # Appends a category to an existing cell.
     # Triggers save_config_snapshot.
 
 def get_matrix_plan(self, user_id: int) -> dict:
@@ -438,7 +428,7 @@ def get_matrix_plan(self, user_id: int) -> dict:
 
 def get_cell_weight(self, user_id: int, movement_plane: str,
                     movement_type: str) -> int:
-    # Returns sum of sub-account weights for the cell (derived, never stored).
+    # Returns sum of category weights for the cell (derived, never stored).
 ```
 
 ### Seeding from Presets
@@ -487,7 +477,7 @@ exercise” — become internal steps within the prescription engine (Section
 
 The prescription engine generates a complete workout session. Each slot in
 the session contains a primary exercise recommendation plus a short list of
-variations that satisfy the same stimulus type and sub-account. The user
+variations that satisfy the same stimulus type and category. The user
 modifies, swaps, or accepts recommendations in real time before or during
 the session.
 
@@ -510,7 +500,7 @@ def build_session(user_id: int,
 
     INPUTS:
         user_id:         int
-        matrix_plan:     dict[tuple, dict]   — hierarchical matrix with sub-accounts
+        matrix_plan: dict[tuple, dict]   — hierarchical matrix with categories
         records:         list[dict]           — this user's records
         exercises:       dict[str, dict]      — full exercise library
         block_targets:   dict                 — from active training block (Section 7.2)
@@ -523,8 +513,8 @@ def build_session(user_id: int,
         {
             'slot':              int,           — position in session (1-based)
             'cell':              (str, str),    — (movement_plane, movement_type)
-            'sub_account':       str,           — sub-account name
-            'measurement_unit':  str,           — from sub-account
+            'category':          str,           — category name
+            'measurement_unit':  str,           — from category
             'primary': {
                 'exercise_name':     str,
                 'suggested_scheme':  str,       — canonical scheme key
@@ -545,37 +535,37 @@ def build_session(user_id: int,
 
     LOGIC:
 
-    1. COMPUTE SUB-ACCOUNT TARGETS
-       For each cell in matrix_plan, for each sub-account:
-           target = sub_account['weight']  (weekly target from the matrix)
-       If block_targets specifies overrides for specific sub-accounts,
+    1. COMPUTE CATEGORY TARGETS
+       For each cell in matrix_plan, for each category:
+           target = category['weight']  (weekly target from the matrix)
+       If block_targets specifies overrides for specific categories,
        apply those.
 
     2. COMPUTE COVERAGE SO FAR
        Filter records to this user, this week (week_start <= date <= today).
        For each record, look up the exercise's cell and determine which
-       sub-account it serves via the exercise library.
+       category it serves via the exercise library.
        Build:
-           sub_account_sessions: dict  — sessions completed per sub-account
+           category_sessions:    dict  — sessions completed per category
            cell_exercises:       dict  — exercise names used per cell
            exercise_last_stim:   dict  — last stimulus per exercise
 
     3. COMPUTE REMAINING VALUE
-       For each sub-account:
+       For each category:
            remaining = max(0, target - completed)
-       Weight by sub-account weight and remaining/target ratio.
-       Sort sub-accounts descending by weighted remaining value.
+       Weight by category weight and remaining/target ratio.
+       Sort categories descending by weighted remaining value.
 
     4. FILL SESSION SLOTS
        For each slot (up to the session size):
-           Pick the highest-value unfilled sub-account.
+           Pick the highest-value unfilled category.
            Select a primary exercise:
                - Not already used in this cell this week (prefer variety)
                - Uses a stimulus not recently repeated for this exercise
-           Select 2–3 variations from the same sub-account that satisfy
-           the same stimulus category.
+           Select 2–3 variations from the same category that satisfy
+           the same stimulus type.
            For each, compute suggested_weight via DDM if available,
-           using the sub-account's measurement_unit for field selection.
+           using the category's measurement_unit for field selection.
 
     5. RETURN SESSION
        Return the ordered list of slot dicts.
@@ -583,18 +573,18 @@ def build_session(user_id: int,
     pass
 ```
 
-### Sub-Account Level Operation
+### Category-Level Operation
 
-The engine operates at sub-account granularity:
+The engine operates at category granularity:
 
-- Targets are expressed in each sub-account's measurement unit. A carry
-  sub-account’s deficit is measured in load × distance, not in reps.
+- Targets are expressed in each category's measurement unit. A carry
+  category's deficit is measured in load × distance, not in reps.
 - Remaining value calculations handle heterogeneous units across the
-  hierarchy. Sub-accounts within the same cell may have different units
+  hierarchy. Categories within the same cell may have different units
   (e.g. Carry/Bracing has both `LOAD_DISTANCE` and `DURATION`).
-- Exercise-to-sub-account mapping uses the exercise library's
+- Exercise-to-category mapping uses the exercise library's
   `movement_plane` and `movement_type` for cell lookup, then matches
-  to a sub-account based on the exercise's characteristics.
+  to a category based on the exercise's characteristics.
 - Variety and stimulus rotation logic (formerly in the removed flag
   functions) is internal to steps 2 and 4 above.
 
@@ -632,8 +622,7 @@ No flag function calls. No flag keys.
 
 ### User-Defined Programming Periods
 
-Remove the hardcoded `weeks_per_block=4` (and the v1 update's proposed
-`weeks_per_block=5`). Training blocks are user-defined programming periods
+Remove the hardcoded `weeks_per_block=4`. Training blocks are user-defined programming periods
 with explicit start dates, end dates, and goal targets.
 
 ```python
@@ -655,26 +644,22 @@ self.__training_blocks: dict[int, list[dict]]
 #                 ('Sagittal', 'Hinge'): {
 #                     'Bilateral Hinge':  {'weekly_target': 2, 'unit': 'VOLUME'},
 #                 },
-#                 # ... targets for sub-accounts the user wants to emphasize
+#                 # ... targets for categories the user wants to emphasize
 #             },
 #         },
 #     ],
 # }
 ```
 
-The programming view tracks budget vs. actual across the active block:
+The programming view tracks plan vs. completed across the active block:
 
-- **Budget**: The `targets` dict above — what the user planned to
-  accomplish per sub-account per week for this block.
-- **Actual**: Derived from `records` filtered to the block's date range,
-  aggregated by sub-account and week.
+- **Plan**: The `targets` dict above — what the user planned to
+  accomplish per category per week for this block.
+- **Completed**: Derived from `records` filtered to the block's date range,
+  aggregated by category and week.
 - **Progress**: Weekly and cumulative completion ratios, displayed as a
-  tracking view showing each sub-account's status (ahead / on track /
+  tracking view showing each category's status (ahead / on track /
   behind / not started).
-
-This is analogous to a month-end close tracker: a structured view of
-what's done, what's remaining, and what's overdue across defined
-accounting periods.
 
 **Methods:**
 
@@ -684,8 +669,8 @@ def add_training_block(self, user_id: int, name: str,
                        targets: dict) -> int:
     # 1. Validate user_id exists
     # 2. Validate end_date > start_date
-    # 3. Validate target sub-accounts exist in user's matrix_plan
-    # 4. Validate measurement units match sub-account definitions
+    # 3. Validate target categories exist in user's matrix_plan
+    # 4. Validate measurement units match category definitions
     # 5. Append to self.__training_blocks[user_id]
     # 6. Return block_id
 
@@ -695,7 +680,7 @@ def get_active_block(self, user_id: int,
     # Returns None if no block covers the date.
 
 def get_block_progress(self, user_id: int, block_id: int) -> dict:
-    # Returns budget vs. actual for each sub-account in the block,
+    # Returns plan vs. completed for each category in the block,
     # broken down by week.
 ```
 
@@ -712,23 +697,24 @@ Blocks are no longer derived from arithmetic on `PROGRAM_START_DATE`.
 
 ## ADD: Section 8 — Competitive Platform (Intent Specification)
 
+> **Version 2:** This section is under development and will be implemented after Version 1 is complete.
+
 This section defines the constraints the competitive layer must satisfy.
 No formulas, data structures, or calculations are specified. The data model
-from preceding sections is sufficient to support all requirements below
-when the mechanics are defined.
+from preceding sections is sufficient to support all requirements when
+the mechanics are defined.
 
 ### Deterministic Scoring
 
 The scoring system produces the same result for any matrix configuration
 given the same inputs. It is not based on adherence percentages or
-quality-of-execution deviation. The specific formula is not yet defined.
+quality-of-execution deviation.
 
 ### Relative Performance
 
 The core metric measures relative performance — how much a user moved
 toward their own goal given their own constraints. Absolute comparisons
-(who lifted more) are not the basis of competition. The specific
-measurement methodology is not yet defined.
+(who lifted more) are not the basis of competition.
 
 ### Handicap System
 
@@ -736,25 +722,23 @@ A handicap enables competition across users with fundamentally different
 objectives, strategies, time commitments, ages, experience levels, and
 starting points. The handicap adjusts scores so that a 62-year-old
 training 3 days/week for functional fitness competes fairly against a
-28-year-old training 5 days/week for powerlifting. The handicap formula
-is not yet defined.
+28-year-old training 5 days/week for powerlifting.
 
 ### Peer Group Comparison
 
 Users are compared within peer groups — people with similar strategy,
-configuration, and matrix selection. Analogous to industry comparables
-in financial analysis. Peer grouping criteria are not yet defined.
+configuration, and matrix selection.
 
 ### Multi-Dimensional Leaderboards
 
-Leaderboards are viewable across many dimensions, modeled after the
-Tour de France jersey system:
+Leaderboards are viewable across many dimensions, using a multi-tier
+jersey format:
 - Yellow jersey: balanced/overall matrix leader
 - Additional jerseys for other dimensions of excellence (TBD)
 
 Users view standings from multiple perspectives simultaneously.
-Leaderboards are filterable by lift, sub-account, cell, plane, and
-user-defined dimensions. The specific dimensions are not yet defined.
+Leaderboards are filterable by lift, category, cell, plane, and
+user-defined dimensions.
 
 ### Radar Grid Positioning
 
@@ -764,8 +748,6 @@ defined by the preset matrix configurations. This positioning determines:
 - Peer group membership for direct comparison
 - Handicap calibration inputs
 
-The radar grid dimensions and positioning logic are not yet defined.
-
 ### Temporal Challenges
 
 Time-bound competitive formats layered on top of the ongoing system:
@@ -773,21 +755,21 @@ Time-bound competitive formats layered on top of the ongoing system:
 - Centralities-of-effort challenges (concentrated effort windows)
 - Other structured events
 
-Challenge formats and eligibility rules are not yet defined.
-
 ### Data Model Dependencies
 
 - User identity (Section 3.1) carries `age` and `training_experience`.
-- Configuration ledger (Section 3.1) records strategy over time, feeding
+- Plan history (Section 3.1) records strategy over time, feeding
   radar grid positioning.
 - Workout records (Section 3.4) are the raw input to any scoring formula.
 - Preset matrix configs (Section 1.4) define the axes of the radar grid.
-- Training blocks (Section 7.2) provide the budget-vs-actual structure
+- Training blocks (Section 7.2) provide the plan-vs-completed structure
   that scoring formulas can reference.
 
 ---
 
 ## ADD: Section 9 — Data Access & Visualization Layer
+
+> **Version 2:** This section is under development and will be implemented after Version 1 is complete.
 
 ### API Connection Points
 
@@ -824,11 +806,11 @@ Capabilities:
 ### Dynamic Filtering & Complex Visualizations
 
 All data views support dynamic filtering:
-- Leaderboards filterable by lift, sub-account, cell, plane, peer group,
+- Leaderboards filterable by lift, category, cell, plane, peer group,
   time period, and user-defined dimensions.
 - Historical data viewable at any granularity (session, week, block,
   all-time).
-- Matrix history (from config ledger) visualized as strategy evolution
+- Matrix history (from plan history) visualized as strategy evolution
   over time.
 - Body metrics (from measurements) overlaid with training volume and
   performance trends.
@@ -839,13 +821,13 @@ notebook environment handles rendering.
 ### Agentic Programming Modification
 
 The visualization agent can modify user programming based on its analysis:
-- Adjust sub-account weights in the matrix.
+- Adjust category weights in the matrix.
 - Create or modify training blocks.
 - Suggest prescription engine parameter changes.
 
 All modifications flow through the same `MtrxApp` methods used by direct
 user interaction. The agent does not bypass the data access layer — it
-uses the same API surface, ensuring all validation, ledger snapshots,
+uses the same API surface, ensuring all validation, plan history snapshots,
 and invariants are maintained.
 
 ---
@@ -853,16 +835,139 @@ and invariants are maintained.
 ## MODIFY: Implementation Roadmap
 
 ### Stage 1 — Constants
+
+**Changes from original:**
+- Replace `DEFAULT_MATRIX_GRID` with `PRESET_MATRIX_CONFIGS` (hierarchical
+  category structure, GPP preset fully defined).
+- Add `MEASUREMENT_UNITS` constant (5 measurement types with fields and
+  formulas).
+- Remove `'Neutral'` from `MOVEMENT_PLANES` and `MOVEMENT_PLANES_ORDERED`.
+- Add `DEFAULT_PRESET = 'GPP'`.
+
+**Test:** Import the file. Print `PRESET_MATRIX_CONFIGS['GPP']['grid']` and
+verify all 24 cells are present with categories. Print `MEASUREMENT_UNITS`.
+Verify `'Neutral'` is absent from `MOVEMENT_PLANES`.
+
 ### Stage 2 — Pure Functions
+
+**Changes from original:**
+- Remove item 7 (`check_intra_cell_variation`, `check_stimulus_interleaving`).
+- Add `build_session` — test with manually constructed hierarchical matrix,
+  records, and exercises. Test cases:
+  - Empty week (no records): fills slots from highest-weight categories
+  - Partially completed week: shifts to underserved categories
+  - Off-plan workout logged: absorbs and recalibrates remaining slots
+  - Categories with different measurement units: verify unit-appropriate
+    targets and suggestions
+  - Verify each slot has primary + variations from same category
+
+**Unchanged:** Items 1–6 (classify_stimulus through compute_blended_adaptation)
+are unaffected.
+
 ### Stage 3 — Database
+
+**Changes from original:**
+- Item 1 (`__users`): `add_user` signature expands with `age`,
+  `training_experience`, and `preset_key` parameters.
+- Item 5 (`__matrix_plans`): Seeding uses deep copy from
+  `PRESET_MATRIX_CONFIGS[preset]['grid']`. `update_matrix_cell` accepts
+  `categories` list. Add `add_category` method.
+- Add item 6: `__plan_history` + `save_config_snapshot` +
+  `get_active_config` + `get_plan_history`.
+  - Verify snapshot is appended on every `update_matrix_cell` call
+  - Verify `get_active_config` returns most recent snapshot
+  - Verify snapshots are deep copies (mutation isolation)
+- Add item 7: `__training_blocks` + `add_training_block` +
+  `get_active_block` + `get_block_progress`.
+  - Verify date range validation
+  - Verify target categories are validated against user's matrix
+  - Verify `get_block_progress` returns plan vs. completed breakdown
+- Item 4 (`__records`): `add_record` schema expands with nullable
+  `duration_seconds` and `distance_meters` fields. Validation checks
+  required fields based on category's `measurement_unit`.
+
 ### Stage 4 — App Controller
+
+**Changes from original:**
+- `log_workout` return value: remove `repeat_exercise_flag` and
+  `repeat_stimulus_flag`. Remove calls to both flag functions.
+- Add method: `generate_session(user_id, date)` → assembles inputs from
+  database, calls `build_session`, returns session list.
+- Add method: `add_training_block(user_id, ...)` → `db.add_training_block`.
+- Add method: `get_block_progress(user_id, block_id)` →
+  `db.get_block_progress`.
+- Add method: `get_plan_history(user_id)` → `db.get_plan_history`.
+- `update_matrix_cell` now triggers `db.save_config_snapshot` internally.
+- `register_user` passes `preset_key` to `db.add_user`.
+
+**Test:** Register 2 users with different presets. Add exercises. Log workouts
+including non-VOLUME measurement units. Call `generate_session`. Verify
+block progress tracking. Verify plan history grows on matrix changes.
+
 ### Stage 5 — Visualization & Reports
+
+**Changes from original:**
+- Program Balance view: update from 4×8 grid to 3×8 grid (no Neutral
+  plane). Display category detail within cells.
+- Block Progress view: new visualization showing plan vs. completed per
+  category across the active training block, with status color coding
+  (ahead / on track / behind / not started).
+- All views operate on the hierarchical matrix structure. Cell-level
+  aggregations sum across categories.
+
 ### Stage 6 — Persistence
-### Stage 7 — Competitive Platform (Future)
-### Stage 8 — AI Visualization Layer (Future)
+
+**Changes from original:**
+- `serialize` / `deserialize`: handle hierarchical `__matrix_plans`
+  structure (category dicts within each cell).
+- Add `plan_history` to serialized state.
+- Add `config_counter` to serialized state.
+- Add `training_blocks` and `block_counter` to serialized state.
+- Record schema includes nullable `duration_seconds` and `distance_meters`.
+- Tuple keys in category structures use the same `'|'.join()` pattern.
+- Increment `SCHEMA_VERSION` to 2.
+
+### Stage 7 — Competitive Platform (Version 2)
+
+Scoring, handicapping, leaderboards, and temporal challenges are implemented
+in this stage when the mechanics are defined. The data model from Stages 1–6
+requires no structural changes to support this stage. Deliverables:
+- Scoring constants and calculation functions in `mtrx_constants.py` /
+  `mtrx_functions.py`.
+- Leaderboard and peer group entities in `mtrx_database.py`.
+- Leaderboard views and radar grid visualization in `mtrx_app.py`.
+
+### Stage 8 — AI Visualization Layer (Version 2)
+
+The AI-driven data access and visualization layer is implemented in this
+stage. Deliverables:
+- Ensure all `MtrxApp` methods return JSON-serializable structures suitable
+  for LLM tool-calling.
+- Build Jupyter notebook templates for common analyses.
+- Define the agent’s tool manifest (method names, parameter schemas,
+  return types) for LLM integration.
+- Implement agentic programming modification flows (matrix adjustment,
+  block creation) through the existing API surface.
 
 ---
 
 ## Change Summary
 
-<!-- Summary table of all changes by number, type, section, description. -->
+| #  | Type   | Section         | Change                                                                  |
+|----|--------|-----------------|-------------------------------------------------------------------------|
+| 1  | MODIFY | 1.4             | Hierarchical category structure (24 cells, weighted categories)         |
+| 2  | ADD    | 1.4             | Measurement unit taxonomy (VOLUME, DURATION, DISTANCE, LOAD_DISTANCE, REPS_ONLY) |
+| 3  | MODIFY | 1.4             | PRESET_MATRIX_CONFIGS replaces DEFAULT_MATRIX_GRID                      |
+| 4  | REMOVE | 1.4             | Neutral plane removed (32 cells → 24 cells)                            |
+| 5  | MODIFY | 1.5             | Remove Neutral from MOVEMENT_PLANES and MOVEMENT_PLANES_ORDERED         |
+| 6  | MODIFY | 3.1             | Add age and training_experience to user identity (data-only)            |
+| 7  | ADD    | 3.1             | Plan history (append-only matrix snapshots)                             |
+| 8  | MODIFY | 3.4             | Record schema expands with duration_seconds and distance_meters         |
+| 9  | MODIFY | 3.5             | Matrix plans use hierarchical category structure                        |
+| 10 | REMOVE | 5 (entire)      | Remove flag functions and all references                                |
+| 11 | ADD    | 4.11            | Prescription engine (build_session — full session generation)           |
+| 12 | MODIFY | 4 (log_workout) | Remove flag keys from return value                                      |
+| 13 | MODIFY | 7.2             | User-defined training blocks replace hardcoded week arithmetic          |
+| 14 | ADD    | 8               | Competitive platform intent specification                               |
+| 15 | ADD    | 9               | Data access & visualization layer (AI-driven Jupyter integration)       |
+| 16 | MODIFY | Roadmap         | Update stages 1–6; add stages 7–8                                       |
