@@ -68,7 +68,7 @@ Private state:
 | `__measurements` | `dict[int, list[dict]]` | Per-user bodyweight time series, sorted ascending by date |
 | `__exercises` | `dict[str, dict]` | Shared exercise library, keyed by normalized name |
 | `__records` | `list[dict]` | All workout records, flat, with `user_id` field |
-| `__matrix_plans` | `dict[int, dict[tuple, dict]]` | Per-user hierarchical movement category plan |
+| `__matrix_plans` | `dict[int, dict[tuple, dict]]` | Per-user category plan: plane × movement combinations, each with dimensionality slots |
 | `__plan_history` | `dict[int, list[dict]]` | Append-only snapshots of matrix state over time |
 | `__training_blocks` | `dict[int, list[dict]]` | Per-user user-defined programming periods with targets |
 
@@ -86,37 +86,37 @@ Profile data plus `age` and `training_experience` (stored, not yet computed agai
 Bodyweight time series per user, kept sorted ascending. Used to auto-resolve `weight` at record-log time when `load_type == 'Bodyweight'`. The most-recent-on-or-before query is a forward scan — no index needed.
 
 ### 5.3 Exercise Library
-Shared across all users. Keyed by `exercise_name.strip().lower()` for dedup. Each exercise record carries:
+Shared across all users. Keyed by `exercise_name.strip().lower()` for dedup. Every exercise maps to a three-part identity: **plane × movement × dimensionality**. Each exercise record carries:
 
-- `(movement_plane, movement_type)` — canonical join key placing it in one of the 24 parent cells
-- `sub_category` — the named category within that cell (e.g., `'Vertical Press'`, `'Horizontal Press'`, or `'Downward Press'` within `('Sagittal', 'Push')`)
+- `movement_plane` + `movement_type` — the parent combination (e.g., `'Sagittal'`, `'Push'`)
+- `dimensionality` — the named slot within that combination (e.g., `'Vertical Press'`, `'Horizontal Press'`, or `'Downward Press'` within Sagittal Push)
 - `laterality` — `Bilateral` or `Unilateral`; drives the ×2 volume multiplier at record time
 - `workout_type`, `default_load_type` — used for filtering and weight resolution
 
-Exercise names cannot be renamed (would orphan historical records). The `sub_category` field is the link between the shared exercise library and the per-user category structure defined in 5.5; it is required for correct category-level aggregation in views and deficit calculation in the prescription engine.
+Exercise names cannot be renamed (would orphan historical records). The `dimensionality` field is the formal link between the shared exercise library and the per-user category plan defined in 5.5; it is required for correct category-level aggregation in views and deficit calculation in the prescription engine.
 
-> **Open issue:** the `sub_category` field is not present in the exercise schema in TDS §3.3. The `add_record` spec currently resolves category by "exercise characteristics or first match," which is ambiguous. This needs to be resolved before Stage 3 implementation.
+> **Open issue:** the `dimensionality` field is not present in the exercise schema in TDS §3.3. The `add_record` spec currently resolves category by "exercise characteristics or first match," which is ambiguous. This needs to be resolved before Stage 3 implementation.
 
 ### 5.4 Workout Records
 A flat `list[dict]`. Every view is a different aggregation; a flat list feeds `pd.DataFrame(records)` directly, supporting any pandas groupby or filter in one line. Records include nullable `duration_seconds` and `distance_meters` to support all five measurement units.
 
-### 5.5 Matrix Plans
+### 5.5 Category Plans
 Per-user hierarchical plan with two levels:
 
-- **Parent cell** — keyed by `(movement_plane, movement_type)` tuple; 24 cells in the default configuration (3 planes × 8 movement types)
-- **Sub-category** — named categories within each cell (e.g., `'Vertical Press'`, `'Horizontal Press'`, `'Downward Press'` within `('Sagittal', 'Push')`), each carrying an integer `weight`, `measurement_unit`, and `exercise_examples`
+- **Plane × movement combination** — keyed by `(movement_plane, movement_type)` tuple; 24 combinations in the default configuration (3 planes × 8 movement types)
+- **Dimensionality** — named slots within each combination (e.g., `'Vertical Press'`, `'Horizontal Press'`, `'Downward Press'` within `('Sagittal', 'Push')`), each carrying an integer `weight`, `measurement_unit`, and `exercise_examples`
 
-Parent weight is always derived (`sum` of sub-category weights) — never stored — eliminating sync errors. The tuple key `(plane, type)` is the canonical join key used throughout the system to link exercises, records, and views back to the matrix.
+Parent weight is always derived (`sum` of dimensionality weights) — never stored — eliminating sync errors. The tuple key `(plane, type)` is the canonical join key used throughout the system to link exercises, records, and views back to the category plan.
 
-**Key V1.0.2 change:** replaces the old flat grid of priority strings. The `exercise_examples` list on each sub-category is a reference hint, not an enforcement mechanism — exercises are formally linked via the `sub_category` field on the exercise record (see 5.3).
+**Key V1.0.2 change:** replaces the old flat structure of priority strings. The `exercise_examples` list on each dimensionality slot is a reference hint, not an enforcement mechanism — exercises are formally linked via the `dimensionality` field on the exercise record (see 5.3).
 
 ### 5.6 Plan History
-Append-only, timestamped snapshots of the full matrix state. Auto-triggered by any matrix modification. Enables plan-vs-completed analysis even after the user later changes their configuration. All snapshots are `deepcopy` — mutation-isolated from the live matrix.
+Append-only, timestamped snapshots of the full category plan state. Auto-triggered by any plan modification. Enables plan-vs-completed analysis even after the user later changes their configuration. All snapshots are `deepcopy` — mutation-isolated from the live plan.
 
 ### 5.7 Training Blocks
 User-defined programming periods with explicit start/end dates and a `targets` dict expressing per-category weekly session goals. These are the authoritative source for session targets (not matrix weights, which are relative prioritization signals, not session counts).
 
-> **Open TODO in TDS:** `weekly_target` (session count) in block targets vs. `weight` (relative priority) in matrix plan are two distinct concepts. `build_program_balance` currently marks `period_target = None` until block targets are integrated. Needs resolution.
+> **Open TODO in TDS:** `weekly_target` (session count) in block targets vs. `weight` (relative priority) in the category plan are two distinct concepts. `build_program_balance` currently marks `period_target = None` until block targets are integrated. Needs resolution.
 
 ---
 
@@ -151,7 +151,7 @@ View functions accept flat records + supporting data, return a `pd.DataFrame`. A
 | `build_summary_matrix` | Realized / Unrealized / Fatigue volume by exercise and stimulus | `groupby(['workout_type', 'exercise_name', 'stimulus']).agg(...)` |
 | `build_vesting_grid` | Per-exercise per-date volume (adaptation window only by default) | `pivot_table(index='date', columns='exercise_name')` |
 | `build_color_matrix` | Companion to vesting grid; blended hex+pct per (date, exercise) cell | Calls `compute_blended_adaptation` per cell |
-| `build_program_balance` | 24-cell matrix view: plan vs. completed sessions per category, period status | Iterates `MOVEMENT_PLANES_ORDERED × MOVEMENT_TYPES_ORDERED` |
+| `build_program_balance` | Plan vs. completed sessions per dimensionality across all plane × movement combinations, with period status | Iterates `MOVEMENT_PLANES_ORDERED × MOVEMENT_TYPES_ORDERED` |
 | `build_weight_guidance` | DDM + four scheme weight suggestions for one exercise | Calls `compute_ddm` → `compute_weight_suggestions` |
 
 **Display-layer rule:** pivoting, coloring, and formatting happen in `mtrx_app.py`. View functions return long-format (tidy) data only.
@@ -184,7 +184,7 @@ Not yet implemented. Data model from V1 is sufficient to support both when mecha
 
 | Stage | File(s) | Deliverable |
 |---|---|---|
-| 1 | `mtrx_constants.py` | All constants; assert 24-cell BLANK grid, 5 measurement units, no `PRIORITY_TARGETS` |
+| 1 | `mtrx_constants.py` | All constants; assert BLANK config has 24 plane × movement combinations each populated with dimensionality slots; assert 5 measurement units; assert no `PRIORITY_TARGETS` |
 | 2 | `mtrx_functions.py` | All pure functions; unit-tested with hardcoded inputs |
 | 3 | `mtrx_database.py` | All entities in build order; integration between entities tested |
 | 4 | `mtrx_app.py` | `MtrxApp` controller; end-to-end flow from registration to session generation |
@@ -197,10 +197,10 @@ Not yet implemented. Data model from V1 is sufficient to support both when mecha
 
 ## Key Cross-Cutting Invariants
 
-- **`deepcopy` on user creation** — matrix plan preset must be deep-copied; shallow copy shares mutable lists across users.
+- **`deepcopy` on user creation** — category plan preset must be deep-copied; shallow copy shares mutable lists across users.
 - **Parent weight never stored** — always `sum(cat['weight'] for cat in cell['categories'])`; prevents sync errors.
 - **Records flat list** — `pd.DataFrame(records)` is the universal aggregation entry point; never nest by user or date.
 - **`today` always explicit** — no `datetime.date.today()` inside pure functions; enables deterministic back-testing.
 - **Exercise names immutable** — records reference exercises by name; renaming would orphan historical data.
-- **Plan history on every matrix change** — `save_config_snapshot` is called inside `update_matrix_cell` and `add_category`, not by the caller.
+- **Plan history on every plan change** — `save_config_snapshot` is called inside `update_matrix_cell` and `add_category`, not by the caller.
 - **No business logic in `MtrxApp`** — orchestration only; all computation delegated to `mtrx_functions`.
