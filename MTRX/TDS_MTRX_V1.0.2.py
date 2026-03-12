@@ -800,6 +800,32 @@ def get_all_exercises(self) -> dict:
     # return {k: dict(v) for k, v in self.__exercises.items()}
     # Required by view functions (build_summary_matrix, build_vesting_grid,
     # build_program_balance) which need the full exercises dict as an argument.
+
+def merge_exercises(self, source_name: str, target_name: str) -> int:
+    # Merges all records referencing source_name into target_name,
+    # then removes the source entry from the exercise library.
+    #
+    # Pre-conditions:
+    # 1. source_key = source_name.strip().lower()
+    #    target_key = target_name.strip().lower()
+    # 2. if source_key not in self.__exercises: raise KeyError
+    # 3. if target_key not in self.__exercises: raise KeyError
+    # 4. if source_key == target_key: raise ValueError('Cannot merge exercise with itself')
+    # 5. Verify both exercises share the same movement_plane, movement_type,
+    #    and dimensionality. Raise ValueError if they differ -- merging across
+    #    categories would corrupt category-level aggregations.
+    #
+    # Merge:
+    # 6. records_updated = 0
+    #    for r in self.__records:
+    #        if r['exercise_name'].strip().lower() == source_key:
+    #            r['exercise_name'] = self.__exercises[target_key]['exercise_name']
+    #            records_updated += 1
+    # 7. del self.__exercises[source_key]
+    # 8. return records_updated  -- count of records re-pointed
+    #
+    # No snapshot is taken -- this is a data cleanup operation, not a plan change.
+    # The caller should log the merge externally if an audit trail is needed.
 """
 
 # ── 3.4 Workout Records ───────────────────────────────────────────────────────
@@ -1064,8 +1090,11 @@ def get_parent_weight(self, user_id: int, movement_plane: str,
 TRAINING_BLOCKS_STRUCTURE = """
 self.__training_blocks: dict[int, list[dict]]
 
-User-defined programming periods. Each block has explicit start and end dates
-and a targets dict expressing per-category weekly goals for the block duration.
+User-defined programming periods. Each block has start and end dates as loose
+boundaries and a targets dict expressing per-dimensionality goals for the block.
+Progress is measured by volume accumulated, session exposure, and other output
+metrics -- not by elapsed time. Time is a view; the authoritative progress
+signal is what was completed, not how long the block has been running.
 
 Example state:
 {
@@ -1077,11 +1106,11 @@ Example state:
             'end_date':   datetime.date(2026, 3, 1),
             'targets': {
                 ('Sagittal', 'Push'): {
-                    'Vertical Press':   {'weekly_target': 3, 'unit': 'VOLUME'},
-                    'Horizontal Press': {'weekly_target': 3, 'unit': 'VOLUME'},
+                    'Vertical Press':   {'target_sessions': 3, 'target_volume': None, 'unit': 'VOLUME'},
+                    'Horizontal Press': {'target_sessions': 3, 'target_volume': None, 'unit': 'VOLUME'},
                 },
                 ('Sagittal', 'Hinge'): {
-                    'Bilateral Hinge':  {'weekly_target': 2, 'unit': 'VOLUME'},
+                    'Bilateral Hinge':  {'target_sessions': 2, 'target_volume': None, 'unit': 'VOLUME'},
                 },
             },
         },
@@ -1092,22 +1121,23 @@ WHY USER-DEFINED BLOCKS:
 Blocks are programming periods defined by the user, not derived arithmetically
 from PROGRAM_START_DATE. Different users have different block lengths, different
 goals per block, and may run overlapping or non-contiguous blocks. Storing them
-explicitly enables plan-vs-completed tracking and progress reporting (Section 7.2).
+explicitly enables output-based progress tracking.
 
 TARGETS:
-The targets dict expresses per-category weekly goals. Only categories the user
-wants to track explicitly need entries -- absence of a category in targets does
-not prevent logging records against it. weekly_target is a session count; the
-prescription engine uses category weights for relative prioritization and
-block targets for absolute volume targets.
+The targets dict expresses per-dimensionality goals. Each entry supports both
+a session count target (target_sessions) and a volume target (target_volume),
+either of which may be None if not set. The unit field aligns the volume target
+with the dimensionality's measurement unit. Progress reporting surfaces both
+metrics; the user decides which is the primary signal for a given block.
+Elapsed time is surfaced as context (e.g. 'Week 3 of 8') but is never the
+primary progress measure.
 
-NOTE -- weekly_target vs parent_weight:
-# TODO: V1.0.2 REVIEW -- resolve weekly_target derivation.
-# block targets use session counts (e.g. weekly_target: 3 = 3 sessions/week).
-# category weights in the matrix express relative priority, not session count.
+NOTE -- target_sessions vs parent_weight:
+# target_sessions is the authoritative goal for a dimensionality within a block.
+# category weights in the category plan express relative priority, not session count.
 # These are two distinct concepts. parent_weight should NOT be used directly
-# as weekly_target in build_program_balance. Block targets are the authoritative
-# source for session targets when a block is active.
+# as target_sessions in build_program_balance. Block targets are the authoritative
+# source for session and volume goals when a block is active.
 """
 
 TRAINING_BLOCKS_METHODS = """
@@ -1518,7 +1548,21 @@ def build_summary_matrix(user_id: int,
                          records: list,
                          exercises: dict,
                          today: datetime.date,
-                         metric: str = 'volume') -> pd.DataFrame:
+                         metric: str = 'volume',
+                         period_start: datetime.date = None,
+                         period_end: datetime.date = None) -> pd.DataFrame:
+    # period_start / period_end define an optional date window.
+    # When both are None, all records for the user are included (all-time).
+    # Standard windows (last 30/60/90, YTD, TTM) are computed by the caller
+    # (MtrxApp) before calling this function -- this function accepts explicit
+    # dates only. This keeps the function pure and avoids embedding date
+    # arithmetic inside a view.
+    #
+    # MtrxApp convenience method signatures:
+    #   get_summary_matrix(user_id, metric, period='all_time')
+    #   period options: 'all_time' | 'last_30' | 'last_60' | 'last_90' | 'ytd' | 'ttm'
+    #   MtrxApp resolves the period string to (period_start, period_end) then
+    #   calls build_summary_matrix with explicit dates.
 
     # Step 1 -- Filter and build DataFrame
     user_records = [r for r in records if r['user_id'] == user_id]
@@ -1972,13 +2016,31 @@ configuration, and matrix selection.
 
 === 8.5 Multi-Dimensional Leaderboards ===
 
-Leaderboards are viewable across many dimensions, using a multi-tier jersey
-format:
-  - Yellow jersey: balanced/overall matrix leader
-  - Additional jerseys for other dimensions of excellence (TBD)
+Leaderboards show ranked high scores across users, filterable by scope and
+time period. Any combination of filters is valid.
 
-Users view standings from multiple perspectives simultaneously. Leaderboards
-are filterable by lift, category, cell, plane, and user-defined dimensions.
+Filter scope options:
+  - Full library total (all exercises, all categories)
+  - Specific exercise (e.g. Bench Press all-time volume)
+  - Dimensionality slot (e.g. Horizontal Press exposure)
+  - Plane x movement combination (e.g. Sagittal Push total volume)
+  - Workout type
+
+Period window options:
+  - All-time
+  - Last 30 / 60 / 90 days
+  - YTD (year-to-date)
+  - TTM (trailing twelve months)
+
+Metric options: volume, session exposure (count), or other output measure.
+
+Leaderboards are direct ranked aggregations of the records layer -- no separate
+scoring model is required. This makes them independent of the V2 competitive
+platform (scoring, handicaps, peer groups) and fully implementable in V1.
+
+Note: multi-dimensional leaderboard filtering and competitive scoring / handicapping
+are separate features. Leaderboards show raw ranked output; the competitive platform
+(V2) layers relative performance and handicap adjustment on top.
 
 
 === 8.6 Radar Grid Positioning ===

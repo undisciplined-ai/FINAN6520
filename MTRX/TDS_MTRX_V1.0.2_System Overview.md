@@ -95,6 +95,8 @@ Shared across all users. Keyed by `exercise_name.strip().lower()` for dedup. Eve
 
 Exercise names cannot be renamed (would orphan historical records). The `dimensionality` field is the formal link between the shared exercise library and the per-user category plan defined in 5.5; it is required for correct category-level aggregation in views and deficit calculation in the prescription engine.
 
+Duplicate entries (e.g. `'bench press'` vs `'bench-press'`) are resolved via `merge_exercises`, which re-points all historical records from the source name to the canonical target and removes the source entry without data loss.
+
 > **Open issue:** the `dimensionality` field is not present in the exercise schema in TDS §3.3. The `add_record` spec currently resolves category by "exercise characteristics or first match," which is ambiguous. This needs to be resolved before Stage 3 implementation.
 
 ### 5.4 Workout Records
@@ -114,9 +116,9 @@ Parent weight is always derived (`sum` of dimensionality weights) — never stor
 Append-only, timestamped snapshots of the full category plan state. Auto-triggered by any plan modification. Enables plan-vs-completed analysis even after the user later changes their configuration. All snapshots are `deepcopy` — mutation-isolated from the live plan.
 
 ### 5.7 Training Blocks
-User-defined programming periods with explicit start/end dates and a `targets` dict expressing per-category weekly session goals. These are the authoritative source for session targets (not matrix weights, which are relative prioritization signals, not session counts).
+User-defined programming periods with start/end dates used as loose boundaries. Progress is measured by volume accumulated, session exposure, and other output metrics — not by elapsed time. Time is a view; the authoritative progress signal is what was done, not how long it took. The `targets` dict expresses per-dimensionality goals in the relevant measurement unit for each category.
 
-> **Open TODO in TDS:** `weekly_target` (session count) in block targets vs. `weight` (relative priority) in the category plan are two distinct concepts. `build_program_balance` currently marks `period_target = None` until block targets are integrated. Needs resolution.
+> **Open TODO in TDS:** block targets currently use `weekly_target` (session count). These should be extended to support volume and exposure targets per the measurement unit of each dimensionality slot. Needs resolution before Stage 3 implementation.
 
 ---
 
@@ -148,7 +150,7 @@ View functions accept flat records + supporting data, return a `pd.DataFrame`. A
 
 | View | What It Shows | Key Pandas Operation |
 |---|---|---|
-| `build_summary_matrix` | Realized / Unrealized / Fatigue volume by exercise and stimulus | `groupby(['workout_type', 'exercise_name', 'stimulus']).agg(...)` |
+| `build_summary_matrix` | Volume by exercise and stimulus type in realized / unrealized / fatigue / non-fatigue buckets; filterable by period (all-time, last 30/60/90 days, YTD, TTM) | `groupby(['workout_type', 'exercise_name', 'stimulus']).agg(...)` |
 | `build_vesting_grid` | Per-exercise per-date volume (adaptation window only by default) | `pivot_table(index='date', columns='exercise_name')` |
 | `build_color_matrix` | Companion to vesting grid; blended hex+pct per (date, exercise) cell | Calls `compute_blended_adaptation` per cell |
 | `build_program_balance` | Plan vs. completed sessions per dimensionality across all plane × movement combinations, with period status | Iterates `MOVEMENT_PLANES_ORDERED × MOVEMENT_TYPES_ORDERED` |
@@ -158,7 +160,21 @@ View functions accept flat records + supporting data, return a `pd.DataFrame`. A
 
 ---
 
-## 8. Program Calendar
+## 8. Leaderboards
+
+Filterable high-score standings across users. A single `build_leaderboard` function accepts filter parameters and a period window and returns a ranked DataFrame.
+
+| Parameter | Options |
+|---|---|
+| **Filter scope** | Full library total, specific exercise, dimensionality slot, plane × movement combination, workout type |
+| **Period window** | All-time, last 30 days, last 60 days, last 90 days, YTD, TTM |
+| **Metric** | Volume, session exposure (count), or other output measure |
+
+Leaderboards are not tied to the competitive scoring or handicap system (V2). They are direct ranked aggregations of the same records used by all other views, making them composable with any existing filter.
+
+---
+
+## 9. Program Calendar
 
 No stored calendar table. All week bounds derived arithmetically from `PROGRAM_START_DATE`.
 
@@ -171,16 +187,16 @@ Authoritative block structure and targets live in `__training_blocks` (Section 5
 
 ---
 
-## 9. Competitive Platform & AI Layer (V2 — Intent Only)
+## 10. Competitive Platform & AI Layer (V2 — Intent Only)
 
 Not yet implemented. Data model from V1 is sufficient to support both when mechanics are defined.
 
-- **Competitive Platform (§8):** deterministic scoring, handicap system, peer group comparison, multi-dimensional leaderboards, radar grid positioning using `PRESET_MATRIX_CONFIGS` axes, temporal challenges.
+- **Competitive Platform (§8):** deterministic scoring, handicap system, peer group comparison, radar grid positioning using `PRESET_MATRIX_CONFIGS` axes, temporal challenges. Multi-dimensional leaderboards (filterable high-score boards) are V1 and specified in Section 8 above.
 - **AI Data Access Layer (§9):** all `MtrxApp` methods are designed as LLM tool endpoints (return `dict` / `list[dict]` / `pd.DataFrame`). Agent modifies plans through the same validated API surface — no bypassing validation or plan history.
 
 ---
 
-## 10. Implementation Sequence
+## 11. Implementation Sequence
 
 | Stage | File(s) | Deliverable |
 |---|---|---|
@@ -188,9 +204,9 @@ Not yet implemented. Data model from V1 is sufficient to support both when mecha
 | 2 | `mtrx_functions.py` | All pure functions; unit-tested with hardcoded inputs |
 | 3 | `mtrx_database.py` | All entities in build order; integration between entities tested |
 | 4 | `mtrx_app.py` | `MtrxApp` controller; end-to-end flow from registration to session generation |
-| 5 | Views | `build_program_balance` + block progress view; VOLUME-only filter in place |
+| 5 | Views + Leaderboards | `build_program_balance`, block progress view, `build_leaderboard`; VOLUME-only filter in place |
 | 6 | Persistence | JSON serialization of full state; `SCHEMA_VERSION = 2` |
-| 7 | Competitive Platform | Scoring, handicapping, leaderboards *(V2)* |
+| 7 | Competitive Platform | Scoring, handicapping, radar grid *(V2)* |
 | 8 | AI Visualization Layer | Tool manifest, notebook templates, agentic modification *(V2)* |
 
 ---
@@ -201,6 +217,6 @@ Not yet implemented. Data model from V1 is sufficient to support both when mecha
 - **Parent weight never stored** — always `sum(cat['weight'] for cat in cell['categories'])`; prevents sync errors.
 - **Records flat list** — `pd.DataFrame(records)` is the universal aggregation entry point; never nest by user or date.
 - **`today` always explicit** — no `datetime.date.today()` inside pure functions; enables deterministic back-testing.
-- **Exercise names immutable** — records reference exercises by name; renaming would orphan historical data.
+- **Exercise names immutable** — records reference exercises by name; use `merge_exercises` to consolidate duplicates rather than rename.
 - **Plan history on every plan change** — `save_config_snapshot` is called inside `update_matrix_cell` and `add_category`, not by the caller.
 - **No business logic in `MtrxApp`** — orchestration only; all computation delegated to `mtrx_functions`.
