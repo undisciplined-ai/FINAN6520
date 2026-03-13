@@ -11,10 +11,10 @@ Check each item to include in V1. Leave unchecked to defer.
 - [V1] **STIMULUS_TABLE** — defines the four stimulus types (N, MT, MD, MS) with adaptation window, fatigue window, and display color for each.
 - [V1] **CANONICAL_SCHEMES** — defines the four standard rep schemes (3×2, 3×5, 3×10, 3×20) with their associated stimulus type and percentage of DDM.
 - [V1] **MEASUREMENT_UNITS** — defines the five exercise measurement unit types (VOLUME, DURATION, DISTANCE, LOAD_DISTANCE, REPS_ONLY) and the required data fields for each.
-- [ ] **PRESET_MATRIX_CONFIGS — BLANK** — the default empty category plan template with all 24 plane × movement combinations pre-populated with dimensionality slots and weights set to zero.
-- [ ] **PRESET_MATRIX_CONFIGS — named presets** (GPP, STRENGTH, HYPERTROPHY, POWERLIFTING, FUNCTIONAL) — additional starting templates with pre-configured weights; currently empty shells in the TDS.
+- [V1] **SEGMENT_TEMPLATES — BLANK** — the default empty category plan template with all 24 plane × movement combinations pre-populated with dimensionality slots and weights set to zero; seeded into each new user's plan via `deepcopy` on `add_user`.
+- [ ] **SEGMENT_TEMPLATES — named presets** (GPP, STRENGTH, HYPERTROPHY, POWERLIFTING, FUNCTIONAL) — optional, scale-adaptable allocation pattern templates; applied at the segment level when building training blocks; proportional distributions that scale to any exercise budget; currently empty stubs in the TDS.
 - [V1] **Controlled vocabulary sets** (MOVEMENT_PLANES, MOVEMENT_TYPES, WORKOUT_TYPES, LATERALITY, LOAD_TYPES) — validation sets used at every write boundary to reject invalid inputs.
-- [ ] **PROGRAM_START_DATE** — single calendar anchor from which all week-number and block-label arithmetic is derived.
+- [V1] **PROGRAM_START_DATE** — single calendar anchor from which all week-number and block-label arithmetic is derived; required by `get_program_week_bounds` and segment week arithmetic.
 
 ---
 
@@ -78,11 +78,12 @@ Check each item to include in V1. Leave unchecked to defer.
 ---
 
 ## Training Blocks
-*`MtrxDatabase` — user-defined programming periods; progress measured by volume, exposure, and completed workouts, not elapsed time.*
+*`MtrxDatabase` — user-defined programming periods containing ordered segments; each segment has independent allocation, workouts_per_week, and exercises_per_workout.*
 
-- [V1] **`add_training_block`** — creates a named programming period with start/end dates and per-dimensionality targets expressed in volume, session exposure, or other output metrics.
+- [V1] **`add_training_block`** — creates a named programming period with a start date and an ordered segments list; each segment specifies `weeks`, `workouts_per_week`, `exercises_per_workout`, `allocation` (dimensionality slot counts per workout), and an optional `preset_key`; block budget and end date are derived from segments.
 - [V1] **`get_active_block`** — returns the training block covering a given date (defaults to today); returns `None` if no block is active.
-- [V1] **`get_block_progress`** — returns plan vs. completed metrics per dimensionality (volume accumulated, sessions logged, exposure) for the block; time elapsed is surfaced as context only, not as the progress measure.
+- [V1] **`get_active_segment`** — returns the segment within a given block that covers a given date; used by the session planning engine to resolve current allocation and exercises_per_workout.
+- [V1] **`get_block_progress`** — returns per-segment allocation coverage and output metrics (volume accumulated, sessions logged) per dimensionality slot; surfaced as context — time elapsed is never the primary progress measure.
 
 ---
 
@@ -99,7 +100,7 @@ Check each item to include in V1. Leave unchecked to defer.
 - [V1] **`compute_ddm`** — computes the Desirable Difficulty Max by back-calculating an implied reference weight from recent sessions across canonical schemes; requires ≥2 schemes with history in the last 90 days.
 - [V1] **`compute_weight_suggestions`** — produces per-scheme working weight targets for all four canonical schemes from a given DDM value.
 - [V1] **`compute_blended_adaptation`** — calculates a volume-weighted blended vesting percentage and display color for sessions involving multiple stimulus types.
-- [] **`build_session`** — generates a full session prescription for a given day by computing category deficits, ranking by weighted remaining value, and selecting exercises with scheme and weight suggestions.
+- [] **`build_session`** — surfaces a ranked session plan for the day by computing category deficits across the active segment, ranking by weighted remaining allocation, and presenting exercise options with scheme and weight suggestions for each slot.
 
 ---
 
@@ -110,14 +111,14 @@ Check each item to include in V1. Leave unchecked to defer.
 - [V1] **`build_vesting_grid`** — pivots records into a date × exercise grid showing volume (or reps) within the active adaptation window.
 - [V1] **`build_color_matrix`** — companion to the vesting grid; produces a blended hex color and opacity value for each date × exercise cell based on stimulus mix.
 - [ ] **`build_program_balance`** — iterates all plane × movement combinations and returns plan vs. completed session counts, status, and volume for a given period.
-- [ ] **`build_weight_guidance`** — surfaces DDM and per-scheme weight suggestions for one exercise; returns a structured note if DDM cannot yet be calculated.
+- [V1] **`build_weight_guidance`** — surfaces DDM and per-scheme weight suggestions for one exercise; returns a structured note if DDM cannot yet be calculated.
 
 ---
 
 ## Program Calendar
 *`mtrx_functions.py` — arithmetic week and block labeling from `PROGRAM_START_DATE`.*
 
-- [ ] **`get_program_week_bounds`** — returns the Monday–Sunday bounds of the program week containing a given date; used by the prescription engine and block progress tracking.
+- [V1] **`get_program_week_bounds`** — returns the Monday–Sunday bounds of the program week containing a given date; required by the session planning engine, segment week arithmetic, and block progress tracking.
 - [ ] **`get_block_label`** — returns a human-readable display label (e.g., `'Round 2 | Week 3'`) for a given date; display-only, not authoritative for block structure.
 
 ---
@@ -125,18 +126,20 @@ Check each item to include in V1. Leave unchecked to defer.
 ## App Controller
 *`mtrx_app.py` — thin orchestration layer; all business logic delegated to functions.*
 
-- [V1] **`register_user`** — creates a new user account and seeds their category plan from a chosen preset.
+- [V1] **`register_user`** — creates a new user account and seeds their category plan from a chosen preset template (`SEGMENT_TEMPLATES`).
 - [V1] **`log_measurement`** — records a dated bodyweight entry for a user.
 - [V1] **`add_exercise`** — adds an exercise to the shared library.
 - [V1] **`log_workout`** — logs a training set, returns the record ID, and — if DDM is calculable — returns working weight suggestions for all four schemes.
-- [ ] **`generate_session`** — assembles all required inputs and calls `build_session` to return today's prescribed workout.
+- [ ] **`generate_session`** — assembles all required inputs, resolves the active segment via `get_active_segment`, and calls `build_session` to return today's session plan.
 - [V1] **`get_weight_guidance`** — returns DDM and per-scheme weight suggestions for a given exercise and user.
 - [V1] **`get_summary_matrix`** — returns the summary volume aggregation for a user.
 - [V1] **`get_vesting_grid`** — returns the date × exercise adaptation grid for a user.
 - [ ] **`get_program_balance`** — returns plan vs. completed session counts across all plane × movement combinations for a given period.
 - [ ] **`update_category_plan_cell`** — replaces the dimensionality slots for one plane × movement combination in a user's plan.
-- [ ] **`add_training_block`** — creates a training block with period dates and per-dimensionality weekly targets.
-- [ ] **`get_block_progress`** — returns plan vs. completed breakdown for a training block by week.
+- [V1] **`add_training_block`** — creates a training block with a start date and ordered segments list.
+- [V1] **`get_active_block`** — returns the active block for a given date.
+- [V1] **`get_active_segment`** — returns the segment covering a given date within the active block; required by `generate_session` to resolve current allocation.
+- [V1] **`get_block_progress`** — returns per-segment allocation coverage and output metrics for a training block.
 - [ ] **`get_plan_history`** — returns the full plan change history for a user.
 
 ---

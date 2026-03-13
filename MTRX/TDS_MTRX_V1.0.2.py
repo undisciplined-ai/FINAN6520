@@ -25,9 +25,11 @@ MTRX is a training management system with four integrated layers:
    category plan. Every workout is mapped to a parent category (defined by
    movement plane and movement type) and a sub-category within it.
 
-2. PRESCRIPTION LAYER — An adaptive, forward-looking engine that generates
-   workout recommendations based on the delta between what was planned and what
-   was completed. The engine recalibrates continuously as sessions are logged.
+2. SESSION PLANNING LAYER — Surfaces a session plan for the day based on the
+   delta between what was allocated and what was completed. Computes category
+   deficits across the active block segment, ranks by weighted remaining value,
+   and presents a ranked list of exercise slots with options for each slot.
+   The user selects from what is presented; the system does not prescribe.
 
 3. COMPETITIVE PLATFORM LAYER — A deterministic scoring system enabling
    relative performance comparison across users with different goals, strategies,
@@ -121,7 +123,7 @@ source of truth. DDM derivation and weight suggestion functions use
 
 # ── 1.3 REMOVED IN V1.0.2 ─────────────────────────────────────────────────────
 # PRIORITY_TARGETS dict and PRIORITY_OPTIONS set have been removed.
-# Both are replaced by per-category weights in PRESET_MATRIX_CONFIGS (Section 1.4).
+# Both are replaced by per-category weights in SEGMENT_TEMPLATES (Section 1.4).
 # PRIORITY_OPTIONS was used only to validate update_matrix_cell(priority: str),
 # which no longer accepts a priority string -- it now accepts a categories list.
 
@@ -180,7 +182,7 @@ time checks that the required fields for the category's measurement_unit
 are present (Section 3.4).
 """
 
-PRESET_MATRIX_CONFIGS = {
+SEGMENT_TEMPLATES = {
 
     # ── BLANK (default) ───────────────────────────────────────────────────────
     # All 24 parent categories pre-populated with sub-categories and measurement
@@ -396,7 +398,12 @@ PRESET_MATRIX_CONFIGS = {
         },
     },
 
-    # ── Named preset stubs (category weights to be defined) ───────────────────
+    # ── Named preset stubs — optional segment allocation templates ──────────────
+    # These define proportional distribution patterns across categories.
+    # Applied at the segment level within training blocks (Section 3.6).
+    # Scale-adaptable: the same template applied to a 4-exercise and a 6-exercise
+    # segment yields proportionally scaled allocations in both cases.
+    # Users can build blocks without using any preset.
     'GPP':          {'name': 'General Physical Preparedness', 'grid': {}},  # TBD
     'STRENGTH':     {'name': 'Strength',                      'grid': {}},  # TBD
     'HYPERTROPHY':  {'name': 'Hypertrophy',                   'grid': {}},  # TBD
@@ -406,10 +413,30 @@ PRESET_MATRIX_CONFIGS = {
 
 DEFAULT_PRESET = 'BLANK'
 
-PRESET_MATRIX_CONFIGS_NOTES = """
-BLANK is the default preset. All 24 parent categories are pre-populated with
-their sub-categories and measurement units; all weights are 0. The user
-populates weights after registration to express their training priorities.
+SEGMENT_TEMPLATES_NOTES = """
+SEGMENT_TEMPLATES serves two distinct purposes:
+
+1. CATEGORY PLAN SEEDING (BLANK):
+   BLANK is the default entry. All 24 parent categories are pre-populated with
+   their dimensionality slots and measurement units; all weights are 0. The user
+   sets weights after registration to express their training priorities.
+
+   add_user calls copy.deepcopy(SEGMENT_TEMPLATES[preset]['grid']) to seed the
+   user's category plan. deepcopy is required because values are mutable dicts
+   containing mutable lists -- a shallow copy would share objects across users
+   (Section 3.1).
+
+2. SEGMENT ALLOCATION TEMPLATES (named presets):
+   Named presets (GPP, STRENGTH, HYPERTROPHY, POWERLIFTING, FUNCTIONAL) are
+   optional allocation pattern templates that can be applied to segments within
+   a training block. They express proportional distribution across categories --
+   not fixed exercise counts. The same GPP template applied to a 4-exercise
+   segment and a 6-exercise segment scales proportionally to each budget.
+
+   preset_key in a segment (Section 3.6) is an optional pointer to an entry
+   here. The segment's allocation is stored independently at creation time;
+   modifying a template after block creation does not affect existing segments.
+   Users can build blocks without using any preset.
 
 The 24 parent categories correspond to the initial 3 planes x 8 movement types.
 Additional parent categories can be appended via add_category without structural
@@ -421,11 +448,6 @@ V1.0.1).
 
 Parent weight = sum(cat['weight'] for cat in cell['categories'])
 Parent weight is never stored -- always derived. This eliminates sync errors.
-
-SEEDING: add_user calls copy.deepcopy(PRESET_MATRIX_CONFIGS[preset]['grid'])
-because the value at each key is a mutable dict containing a mutable list.
-A shallow copy would share the same category list objects across users.
-deepcopy is required (Section 3.1).
 """
 
 # ── 1.5 Controlled Vocabulary Lists ───────────────────────────────────────────
@@ -535,7 +557,7 @@ MULTI_USER_BOUNDARY_TABLE = """
 | Exercise Library       | Shared -- all users                | self.__exercises single dict in MtrxDatabase                        |
 | System Constants       | Shared -- all users                | Module-level constants in mtrx_constants.py                         |
 | Program Calendar       | Shared -- all users                | Computed from PROGRAM_START_DATE                                    |
-| Preset Configs         | Shared seed, deep-copied per user  | copy.deepcopy(PRESET_MATRIX_CONFIGS[preset]['grid']) on add_user    |
+| Preset Configs         | Shared seed, deep-copied per user  | copy.deepcopy(SEGMENT_TEMPLATES[preset]['grid']) on add_user        |
 | Workout Records        | Per user                           | user_id field on every record; filtered at query                    |
 | User Measurements      | Per user                           | self.__measurements keyed by user_id                                |
 | Matrix Plan            | Per user after registration        | self.__matrix_plans[user_id] -- dict[tuple, dict] with categories   |
@@ -589,7 +611,7 @@ def add_user(self, username: str, display_name: str, email: str,
     #                              'email': email, 'join_date': datetime.date.today(),
     #                              'age': age, 'training_experience': training_experience}
     # 5. preset = preset_key or DEFAULT_PRESET
-    #    self.__matrix_plans[user_id] = copy.deepcopy(PRESET_MATRIX_CONFIGS[preset]['grid'])
+    #    self.__matrix_plans[user_id] = copy.deepcopy(SEGMENT_TEMPLATES[preset]['grid'])
     #    (deepcopy required -- values are mutable dicts containing mutable lists)
     # 6. self.__measurements[user_id] = []
     # 7. self.__plan_history[user_id] = []
@@ -1038,7 +1060,7 @@ preserves insertion order, supports append without key-collision concerns, and
 matches the natural "add another subcategory" operation.
 
 SEEDING: Called automatically inside add_user via copy.deepcopy(
-PRESET_MATRIX_CONFIGS[preset]['grid']). Deepcopy is required because values are
+SEGMENT_TEMPLATES[preset]['grid']). Deepcopy is required because values are
 mutable dicts containing mutable lists. A shallow copy would share category list
 objects across users.
 
@@ -1090,11 +1112,10 @@ def get_parent_weight(self, user_id: int, movement_plane: str,
 TRAINING_BLOCKS_STRUCTURE = """
 self.__training_blocks: dict[int, list[dict]]
 
-User-defined programming periods. Each block has start and end dates as loose
-boundaries and a targets dict expressing per-dimensionality goals for the block.
-Progress is measured by volume accumulated, session exposure, and other output
-metrics -- not by elapsed time. Time is a view; the authoritative progress
-signal is what was completed, not how long the block has been running.
+User-defined programming periods. Each block contains an ordered list of segments.
+Each segment independently configures workouts_per_week, exercises_per_workout,
+and allocation across the category plan. Block budget is always derived from
+segments and never stored at the block level.
 
 Example state:
 {
@@ -1103,55 +1124,121 @@ Example state:
             'block_id':   1,
             'name':       'Spring Strength Block',
             'start_date': datetime.date(2026, 1, 5),
-            'end_date':   datetime.date(2026, 3, 1),
-            'targets': {
-                ('Sagittal', 'Push'): {
-                    'Vertical Press':   {'target_sessions': 3, 'target_volume': None, 'unit': 'VOLUME'},
-                    'Horizontal Press': {'target_sessions': 3, 'target_volume': None, 'unit': 'VOLUME'},
+            'end_date':   datetime.date(2026, 3, 29),   # derived from segments; stored for display
+            'segments': [
+                {
+                    'name':                  'GPP Phase',
+                    'weeks':                 [1, 2, 3, 4],   # 1-indexed from block start
+                    'workouts_per_week':     4,
+                    'exercises_per_workout': 6,
+                    'allocation': {
+                        ('Sagittal', 'Push'):  {'Vertical Press': 2, 'Horizontal Press': 3, 'Downward Press': 1},
+                        ('Sagittal', 'Pull'):  {'Vertical Pull': 2, 'Horizontal Pull': 2},
+                        ('Sagittal', 'Hinge'): {'Bilateral Hinge': 3},
+                    },
+                    'preset_key': 'GPP',   # optional pointer to SEGMENT_TEMPLATES; None if no preset used
                 },
-                ('Sagittal', 'Hinge'): {
-                    'Bilateral Hinge':  {'target_sessions': 2, 'target_volume': None, 'unit': 'VOLUME'},
+                {
+                    'name':                  'Peaking Phase',
+                    'weeks':                 [5],
+                    'workouts_per_week':     4,
+                    'exercises_per_workout': 4,
+                    'allocation': {
+                        ('Sagittal', 'Push'):  {'Horizontal Press': 2},
+                        ('Sagittal', 'Hinge'): {'Bilateral Hinge': 2},
+                    },
+                    'preset_key': 'POWERLIFTING',
                 },
-            },
+                {
+                    'name':                  'GPP Phase 2',
+                    'weeks':                 [6, 7, 8, 9],
+                    'workouts_per_week':     4,
+                    'exercises_per_workout': 6,
+                    'allocation': {
+                        ('Sagittal', 'Push'):  {'Vertical Press': 2, 'Horizontal Press': 3, 'Downward Press': 1},
+                        ('Sagittal', 'Pull'):  {'Vertical Pull': 2, 'Horizontal Pull': 2},
+                        ('Sagittal', 'Hinge'): {'Bilateral Hinge': 3},
+                    },
+                    'preset_key': None,
+                },
+            ],
         },
     ],
 }
 
-WHY USER-DEFINED BLOCKS:
-Blocks are programming periods defined by the user, not derived arithmetically
-from PROGRAM_START_DATE. Different users have different block lengths, different
-goals per block, and may run overlapping or non-contiguous blocks. Storing them
-explicitly enables output-based progress tracking.
+BLOCK BUDGET (always derived, never stored):
+    budget = sum(
+        seg['workouts_per_week'] * seg['exercises_per_workout'] * len(seg['weeks'])
+        for seg in block['segments']
+    )
+    For the example above:
+        GPP Phase:    4 x 6 x 4 = 96 exercise slots
+        Peaking:      4 x 4 x 1 = 16 exercise slots
+        GPP Phase 2:  4 x 6 x 4 = 96 exercise slots
+        Total:        208 exercise slots over the 9-week block.
 
-TARGETS:
-The targets dict expresses per-dimensionality goals. Each entry supports both
-a session count target (target_sessions) and a volume target (target_volume),
-either of which may be None if not set. The unit field aligns the volume target
-with the dimensionality's measurement unit. Progress reporting surfaces both
-metrics; the user decides which is the primary signal for a given block.
-Elapsed time is surfaced as context (e.g. 'Week 3 of 8') but is never the
-primary progress measure.
+ALLOCATION DICT:
+Maps (movement_plane, movement_type) cells to dimensionality slots with per-workout
+slot counts. The integer value for each dimensionality name is the number of
+exercise slots assigned per session. Allocation sums within a segment typically
+equal exercises_per_workout, but this is a planning target, not enforced.
 
-NOTE -- target_sessions vs parent_weight:
-# target_sessions is the authoritative goal for a dimensionality within a block.
-# category weights in the category plan express relative priority, not session count.
-# These are two distinct concepts. parent_weight should NOT be used directly
-# as target_sessions in build_program_balance. Block targets are the authoritative
-# source for session and volume goals when a block is active.
+SEGMENTS:
+Cover sequential weeks within the block. Each segment defines its own
+workouts_per_week and exercises_per_workout, allowing different training phases
+(e.g. a powerlifting peak uses fewer exercises per workout than a GPP phase) to
+coexist within the same block. A rest or deload phase is modeled as a segment
+with near-zero allocation and low exercises_per_workout.
+
+PRESET_KEY:
+An optional pointer to a SEGMENT_TEMPLATES entry. When present, the preset
+supplied the initial allocation pattern. The segment's allocation is stored
+independently at creation time; modifying the template after block creation
+does not retroactively change existing segments. Users can build blocks and
+segments without applying any preset.
+
+END_DATE (derived and stored for display convenience):
+    max_week = max(w for seg in segments for w in seg['weeks'])
+    end_date = start_date + timedelta(days=(max_week * 7) - 1)
+start_date is the authoritative anchor. Blocks are user-defined programming
+periods, not derived arithmetically from PROGRAM_START_DATE.
+
+PROGRESS SIGNAL:
+Progress is measured by volume accumulated, session exposure, and other output
+metrics per dimensionality slot -- not by elapsed time. Time is a view; the
+authoritative progress signal is what was completed, not how long the block
+has been running.
 """
 
 TRAINING_BLOCKS_METHODS = """
 def add_training_block(self, user_id: int, name: str,
-                       start_date: datetime.date, end_date: datetime.date,
-                       targets: dict) -> int:
+                       start_date: datetime.date,
+                       segments: list) -> int:
+    # Creates a training block with an ordered segments list.
+    # end_date is derived from start_date and the highest week number across
+    # all segments, then stored for display convenience.
+    #
     # 1. Validate user_id exists
-    # 2. Validate end_date > start_date
-    # 3. Validate target cell keys exist in user's matrix_plan
-    # 4. Validate measurement units in targets match category definitions
+    # 2. Validate segments is a non-empty list
+    # 3. For each segment, validate:
+    #        - 'name', 'weeks', 'workouts_per_week', 'exercises_per_workout',
+    #          'allocation', 'preset_key' keys are present
+    #        - 'weeks' is a non-empty list of positive integers
+    #        - workouts_per_week and exercises_per_workout are positive integers
+    #        - each (plane, type) key in allocation is in MOVEMENT_PLANES x MOVEMENT_TYPES
+    #        - each dimensionality name referenced in allocation exists in the
+    #          user's category plan for the corresponding cell
+    #        - 'preset_key' is either None or a key in SEGMENT_TEMPLATES
+    # 4. Derive end_date:
+    #        max_week = max(w for seg in segments for w in seg['weeks'])
+    #        end_date = start_date + datetime.timedelta(days=(max_week * 7) - 1)
     # 5. block_id = self.__block_counter
     # 6. self.__training_blocks[user_id].append({
-    #        'block_id': block_id, 'name': name, 'start_date': start_date,
-    #        'end_date': end_date, 'targets': targets,
+    #        'block_id':   block_id,
+    #        'name':       name,
+    #        'start_date': start_date,
+    #        'end_date':   end_date,
+    #        'segments':   segments,
     #    })
     # 7. self.__block_counter += 1
     # 8. return block_id
@@ -1163,24 +1250,55 @@ def get_active_block(self, user_id: int,
     # Returns None if no block covers the date.
     # If multiple blocks cover the date, returns the most recently added.
 
+def get_active_segment(self, user_id: int, block_id: int,
+                       as_of: datetime.date = None) -> dict | None:
+    # Returns the segment within the specified block that covers the given date.
+    # as_of defaults to datetime.date.today() if not provided.
+    #
+    # 1. Validate user_id exists
+    # 2. Find block by block_id in self.__training_blocks[user_id];
+    #    raise KeyError if not found
+    # 3. as_of = as_of or datetime.date.today()
+    # 4. Compute block-relative week number:
+    #        days_into_block = (as_of - block['start_date']).days
+    #        if days_into_block < 0: return None  # date precedes block start
+    #        week_in_block = (days_into_block // 7) + 1  # 1-indexed
+    # 5. Return the first segment whose 'weeks' list contains week_in_block:
+    #        return next(
+    #            (seg for seg in block['segments'] if week_in_block in seg['weeks']),
+    #            None
+    #        )
+
 def get_block_progress(self, user_id: int, block_id: int) -> dict:
-    # Returns plan vs. completed for each category in the block, by week.
+    # Returns plan vs. completed per segment, with allocation coverage
+    # and output metrics per dimensionality slot.
+    #
     # Structure:
     # {
-    #     'block': { ... },   # the block dict
-    #     'weeks': {
-    #         week_start: {
-    #             (plane, type): {
-    #                 category_name: {
-    #                     'target':    int,     # from block targets
-    #                     'completed': int,     # sessions logged this week
-    #                     'status':    str,     # 'Ahead' / 'On Track' / 'Behind' / 'Not Started'
+    #     'block': { 'block_id': int, 'name': str, 'start_date': date,
+    #                'end_date': date },
+    #     'segments': [
+    #         {
+    #             'segment_name':  str,
+    #             'weeks':         list[int],
+    #             'allocation':    dict,
+    #             'progress': {
+    #                 (plane, type): {
+    #                     dimensionality_name: {
+    #                         'allocated_slots': int,    # from segment allocation
+    #                         'sessions_logged': int,    # records in this segment's date range
+    #                         'volume_logged':   float | None,
+    #                     },
     #                 },
     #             },
     #         },
     #         ...
-    #     },
+    #     ],
     # }
+    #
+    # Segment date range: [start_date + timedelta((week_min-1)*7),
+    #                       start_date + timedelta(week_max*7 - 1)]
+    # where week_min/week_max are derived from segment['weeks'].
 """
 
 
@@ -1409,32 +1527,32 @@ def compute_blended_adaptation(contributions: list) -> dict:
 def build_session(matrix_plan: dict,
                   records: list,
                   exercises: dict,
-                  block_targets: dict,
+                  active_segment: dict | None,
                   week_start: datetime.date,
                   week_end: datetime.date,
                   today: datetime.date) -> list:
     """
-    Generates a workout session for today.
+    Surfaces a session plan for the day.
 
     CALLER CONTRACT: All inputs are assembled by MtrxApp from the database.
     This function is pure -- no side effects, deterministic given same inputs.
 
     INPUTS:
-        matrix_plan:   dict[tuple, dict]  -- hierarchical matrix with categories
-        records:       list[dict]         -- this user's records (pre-filtered)
-        exercises:     dict[str, dict]    -- full exercise library
-        block_targets: dict               -- from active training block (Section 3.6/7.2);
-                                             None if no active block
-        week_start:    datetime.date
-        week_end:      datetime.date
-        today:         datetime.date
+        matrix_plan:    dict[tuple, dict]  -- hierarchical matrix with categories
+        records:        list[dict]         -- this user's records (pre-filtered)
+        exercises:      dict[str, dict]    -- full exercise library
+        active_segment: dict | None        -- from db.get_active_segment(); None if no
+                                              active block or no segment covers today
+        week_start:     datetime.date
+        week_end:       datetime.date
+        today:          datetime.date
 
     OUTPUT:
         list of dicts, one per exercise slot in the session. Each dict:
         {
             'slot':             int,            # position in session (1-based)
             'cell':             (str, str),     # (movement_plane, movement_type)
-            'category':         str,            # category name
+            'category':         str,            # dimensionality name
             'measurement_unit': str,            # from category definition
             'primary': {
                 'exercise_name':    str,
@@ -1456,11 +1574,12 @@ def build_session(matrix_plan: dict,
 
     LOGIC:
 
-    1. COMPUTE CATEGORY TARGETS
-       For each cell in matrix_plan, for each category:
-           target = category['weight']  (weekly target from the matrix)
-       If block_targets specifies overrides for specific categories, apply those.
-       Block targets take precedence over matrix weights when a block is active.
+    1. RESOLVE SESSION SIZE AND ALLOCATION
+       If active_segment is not None:
+           exercises_per_workout = active_segment['exercises_per_workout']
+           allocation = active_segment['allocation']
+       Else:
+           Derive from category weights in matrix_plan (fallback when no block active).
 
     2. COMPUTE COVERAGE SO FAR
        Filter records to this week (week_start <= date <= today).
@@ -1476,26 +1595,27 @@ def build_session(matrix_plan: dict,
 
     3. COMPUTE REMAINING VALUE
        For each category:
-           remaining = max(0, target - completed)
-       Weight by category weight and remaining/target ratio.
+           allocated_this_session = from active_segment allocation (or fallback)
+           remaining = max(0, allocated - completed)
+       Weight by category weight and remaining/allocated ratio.
        Sort categories descending by weighted remaining value.
-       Categories with weight = 0 contribute no remaining value and are skipped.
+       Categories with weight = 0 (or not in allocation) contribute no remaining
+       value and are skipped.
 
     4. FILL SESSION SLOTS
-       For each slot (up to the session size from block_targets or a default):
+       For each slot (up to exercises_per_workout):
            Pick the highest-value unfilled category.
            Select a primary exercise:
                - Prefer exercises not already used in this cell this week (variety)
                - Prefer a stimulus not recently repeated for this exercise
                  (rotation)
-           Select 2-3 variations from the same category satisfying the same
-           stimulus type.
+           Select 2-3 variations from the same category.
            For each candidate, compute suggested_weight via compute_ddm /
-           compute_weight_suggestions if DDM is available. Uses the category's
-           measurement_unit to determine which weight field to populate.
+           compute_weight_suggestions if DDM is available.
 
     5. RETURN SESSION
-       Return the ordered list of slot dicts.
+       Return the ordered list of slot dicts. The user selects from the options
+       presented; the session plan is not an instruction.
 
     CATEGORY-LEVEL OPERATION NOTES:
     - Targets are expressed in each category's own measurement unit. A carry
@@ -1505,10 +1625,6 @@ def build_session(matrix_plan: dict,
       Carry/Bracing has both LOAD_DISTANCE and DURATION sub-categories).
       Remaining value calculations across heterogeneous units use the
       normalized weight ratios, not raw unit values.
-    - Exercise-to-category mapping is via the exercise library's
-      (movement_plane, movement_type) for cell lookup. Within a cell, category
-      matching uses exercise_examples as a soft hint; all exercises in a cell
-      serve all categories by default unless further specified.
     """
     pass
 
@@ -1917,60 +2033,75 @@ def get_block_label(target_date: datetime.date, weeks_per_block: int = 4) -> str
 # This subsection provides cross-references and notes on the programming view.
 #
 # PLAN-VS-COMPLETED TRACKING:
-#   Plan:      The 'targets' dict in the active block — what the user planned
-#              to accomplish per category per week for this block.
-#   Completed: Derived from records filtered to the block's date range,
-#              aggregated by category and week.
-#   Progress:  Weekly and cumulative completion ratios, displayed as a tracking
-#              view showing each category's status (ahead / on track / behind /
-#              not started).
+#   Plan:      The allocation dict in each segment — exercise slots assigned
+#              per dimensionality per workout for each phase of the block.
+#   Completed: Derived from records filtered to the segment's date range,
+#              aggregated by category and dimensionality.
+#   Progress:  Per-segment allocation coverage (sessions logged vs. slots
+#              allocated) and output metrics (volume, exposure), displayed
+#              as a tracking view.
 #
 # KEY METHODS (implemented in MtrxDatabase — see Section 3.6):
-#   db.add_training_block(user_id, name, start_date, end_date, targets) -> int
-#   db.get_active_block(user_id, as_of=None)                            -> dict|None
-#   db.get_block_progress(user_id, block_id)                            -> dict
+#   db.add_training_block(user_id, name, start_date, segments)       -> int
+#   db.get_active_block(user_id, as_of=None)                         -> dict|None
+#   db.get_active_segment(user_id, block_id, as_of=None)             -> dict|None
+#   db.get_block_progress(user_id, block_id)                         -> dict
 #
 # WEEKLY BREAKDOWN:
 #   Use get_program_week_bounds(date) to align records to program weeks.
-#   get_block_progress iterates each week within the block's date range,
-#   computes session counts per category from records, and compares against
-#   the block's targets dict.
+#   Segment date ranges are derived from block start_date and segment 'weeks'
+#   lists. get_block_progress iterates each segment, computes sessions and
+#   volume per dimensionality from records, and compares against allocation.
 #
 # NOTE ON get_block_label:
 #   get_block_label (Section 7.1) produces display strings (e.g. 'Round 2 |
 #   Week 3') using arithmetic on PROGRAM_START_DATE. This is independent of
 #   user-defined block boundaries and useful for headings in views. It does not
-#   reflect the start/end dates of the active training block.
+#   reflect the start/end dates of the active training block or its segments.
 
 TRAINING_BLOCKS_CROSS_REF = """
 Section 3.6 defines:
 
   __training_blocks: dict[int, list[dict]]
 
-  Example state:
+  Each block contains an ordered segments list. Segments cover different weeks
+  of the block and have independent allocation, workouts_per_week, and
+  exercises_per_workout. Block budget is derived from segments (never stored).
+
+  Abbreviated example:
   {
       1: [
           {
               'block_id':   1,
               'name':       'Spring Strength Block',
               'start_date': datetime.date(2026, 1, 5),
-              'end_date':   datetime.date(2026, 3, 1),
-              'targets': {
-                  ('Sagittal', 'Push'): {
-                      'Vertical Press':   {'weekly_target': 3, 'unit': 'VOLUME'},
-                      'Horizontal Press': {'weekly_target': 3, 'unit': 'VOLUME'},
+              'end_date':   datetime.date(2026, 3, 29),
+              'segments': [
+                  {
+                      'name':                  'GPP Phase',
+                      'weeks':                 [1, 2, 3, 4],
+                      'workouts_per_week':     4,
+                      'exercises_per_workout': 6,
+                      'allocation': { ... },
+                      'preset_key': 'GPP',
                   },
-                  ('Sagittal', 'Hinge'): {
-                      'Bilateral Hinge':  {'weekly_target': 2, 'unit': 'VOLUME'},
+                  {
+                      'name':                  'Peaking Phase',
+                      'weeks':                 [5],
+                      'workouts_per_week':     4,
+                      'exercises_per_workout': 4,
+                      'allocation': { ... },
+                      'preset_key': 'POWERLIFTING',
                   },
-              },
+              ],
           },
       ],
   }
 
-  Methods: add_training_block, get_active_block, get_block_progress.
+  Methods: add_training_block, get_active_block, get_active_segment,
+           get_block_progress.
   Full spec in Section 3.6. This cross-reference exists so Section 7 remains
-  the logical home for 'how do I look up the current block?' without
+  the logical home for 'how do I look up the current block/segment?' without
   duplicating the data structure definition.
 """
 
@@ -2066,7 +2197,7 @@ Time-bound competitive formats layered on top of the ongoing system:
   - Plan history (Section 3.1b) records strategy over time, feeding
     radar grid positioning.
   - Workout records (Section 3.4) are the raw input to any scoring formula.
-  - Preset matrix configs (Section 1.4) define the axes of the radar grid.
+  - SEGMENT_TEMPLATES (Section 1.4) define the axes of the radar grid.
   - Training blocks (Section 3.6 / 7.2) provide the plan-vs-completed
     structure that scoring formulas can reference.
 """
@@ -2157,7 +2288,7 @@ IMPLEMENTATION_ROADMAP = """
 
 BUILD:   Define all constants from Section 1 in a single file.
 
-TEST:    Import the file. Assert PRESET_MATRIX_CONFIGS['BLANK'] is present
+TEST:    Import the file. Assert SEGMENT_TEMPLATES['BLANK'] is present
          and contains exactly 24 cells (3 planes × 8 movement types). Verify
          all 24 categories have weight = 0. Print MEASUREMENT_UNITS and verify
          all 5 units are present (VOLUME, DURATION, DISTANCE, LOAD_DISTANCE,
@@ -2224,7 +2355,7 @@ BUILD ORDER:
                        record schema includes nullable duration_seconds and
                        distance_meters; add_record validates required fields
                        per category's measurement_unit
-5. __matrix_plans   seeded at user creation via deepcopy of PRESET_MATRIX_CONFIGS
+5. __matrix_plans   seeded at user creation via deepcopy of SEGMENT_TEMPLATES
                     + update_matrix_cell(user_id, movement_plane, movement_type,
                                          categories: list)
                       + add_category(user_id, movement_plane, movement_type,
@@ -2243,15 +2374,16 @@ BUILD ORDER:
                        verify get_active_config returns most recent snapshot;
                        verify snapshots are deep copies (mutation isolation);
                        verify config_counter increments
-7. __training_blocks + add_training_block(user_id, name, start_date, end_date,
-                                           targets)
+7. __training_blocks + add_training_block(user_id, name, start_date, segments)
                        + get_active_block(user_id, as_of=None)
+                       + get_active_segment(user_id, block_id, as_of=None)
                        + get_block_progress(user_id, block_id)
-                     -- verify end_date > start_date validation;
-                        verify target categories validated against user's matrix;
-                        verify measurement units match category definitions;
-                        verify get_block_progress returns plan vs. completed
-                        breakdown with weekly granularity;
+                     -- verify non-empty segments list required;
+                        verify each segment has required keys;
+                        verify dimensionality names validated against user's category plan;
+                        verify end_date derived from max week across all segments;
+                        verify get_active_segment returns correct segment for a given date;
+                        verify get_block_progress returns per-segment progress breakdown;
                         verify block_counter increments
 
 TEST: After each entity group is added, print the database __repr__ and inspect
@@ -2280,6 +2412,8 @@ KEY METHODS:
                                                   repeat_stimulus_flag removed.
                                                   Flag functions removed in V1.0.2.
   generate_session(user_id, date)              -> assembles inputs from database,
+                                                  calls db.get_active_segment to
+                                                  resolve the current segment,
                                                   calls build_session, returns
                                                   session list
   get_weight_guidance(exercise_name, user_id)  -> db.get_records(user_id) then
@@ -2291,10 +2425,11 @@ KEY METHODS:
                      categories)               -> db.update_matrix_cell
                                                   (triggers save_config_snapshot)
   add_training_block(user_id, name,
-                     start_date, end_date,
-                     targets)                  -> db.add_training_block
-  get_block_progress(user_id, block_id)        -> db.get_block_progress
-  get_plan_history(user_id)                    -> db.get_plan_history
+                     start_date, segments)            -> db.add_training_block
+  get_active_block(user_id, as_of=None)               -> db.get_active_block
+  get_active_segment(user_id, block_id, as_of=None)   -> db.get_active_segment
+  get_block_progress(user_id, block_id)               -> db.get_block_progress
+  get_plan_history(user_id)                           -> db.get_plan_history
 
 TEST: Register 2 users with different presets. Add exercises. Log workouts
 including non-VOLUME measurement units. Call generate_session. Verify block

@@ -10,7 +10,7 @@ A training management system with four integrated layers:
 | Layer | Role |
 |---|---|
 | **Tracking** | Records workout sessions and maps them to a user-defined movement category plan |
-| **Prescription** | Generates adaptive session recommendations based on plan vs. completed delta |
+| **Session Planning** | Surfaces a session plan based on the delta between allocated and completed across the active block segment; the user selects from the options presented |
 | **Competitive Platform** | Deterministic scoring enabling handicap-adjusted comparison across users *(V2 — intent only)* |
 | **AI Data Access** | LLM-ready API surface for conversational data access, notebook generation, and programmatic plan modification *(V2 — intent only)* |
 
@@ -45,7 +45,7 @@ Fixed values imported wherever needed. Never passed as arguments, never modified
 | `STIMULUS_TABLE` | Four stimulus types (N/MT/MD/MS) with adaptation days, fatigue days, and hex color | `classify_stimulus`, vesting calculations, color rendering |
 | `CANONICAL_SCHEMES` | Four rep schemes (3×2, 3×5, 3×10, 3×20) each mapped to a stimulus type and a % of DDM | `compute_ddm`, `compute_weight_suggestions` |
 | `MEASUREMENT_UNITS` | Five unit types (VOLUME, DURATION, DISTANCE, LOAD_DISTANCE, REPS_ONLY) with required fields per unit | Record validation in `add_record`; prescription logic in `build_session` |
-| `PRESET_MATRIX_CONFIGS` | Pre-built training templates (BLANK + named presets) containing 24 parent categories with sub-categories and per-category measurement units | Seeds each new user's matrix via `deepcopy` on `add_user` |
+| `SEGMENT_TEMPLATES` | BLANK: default category plan template with all 24 plane × movement combinations pre-populated with dimensionality slots, weights zero. Named presets (GPP, STRENGTH, etc.): optional, scale-adaptable allocation pattern templates applied at the segment level within training blocks; proportional distributions that scale to any exercise budget | `add_user` deep-copies `BLANK` grid into `__matrix_plans`; segment `preset_key` optionally references a named preset |
 | `MOVEMENT_PLANES / TYPES / etc.` | Controlled vocabulary sets for validation at every write boundary | All `add_*` and `update_*` methods |
 | `PROGRAM_START_DATE` | Single calendar anchor (2026-01-05) from which all week/block arithmetic derives | `get_program_week_bounds`, `get_block_label` |
 
@@ -70,7 +70,7 @@ Private state:
 | `__records` | `list[dict]` | All workout records, flat, with `user_id` field |
 | `__matrix_plans` | `dict[int, dict[tuple, dict]]` | Per-user category plan: plane × movement combinations, each with dimensionality slots |
 | `__plan_history` | `dict[int, list[dict]]` | Append-only snapshots of matrix state over time |
-| `__training_blocks` | `dict[int, list[dict]]` | Per-user user-defined programming periods with targets |
+| `__training_blocks` | `dict[int, list[dict]]` | Per-user user-defined programming periods; each block contains an ordered segments list where each segment has independent `workouts_per_week`, `exercises_per_workout`, `allocation`, and optional `preset_key` |
 
 ### `MtrxApp`
 The public controller. Holds one `MtrxDatabase`. Methods pull data from the db, pass it to functions, return or display results. No business logic lives here.
@@ -116,9 +116,24 @@ Parent weight is always derived (`sum` of dimensionality weights) — never stor
 Append-only, timestamped snapshots of the full category plan state. Auto-triggered by any plan modification. Enables plan-vs-completed analysis even after the user later changes their configuration. All snapshots are `deepcopy` — mutation-isolated from the live plan.
 
 ### 5.7 Training Blocks
-User-defined programming periods with start/end dates used as loose boundaries. Progress is measured by volume accumulated, session exposure, and other output metrics — not by elapsed time. Time is a view; the authoritative progress signal is what was done, not how long it took. The `targets` dict expresses per-dimensionality goals in the relevant measurement unit for each category.
+User-defined programming periods containing an ordered list of segments. Each segment covers a set of weeks within the block and independently configures:
 
-> **Open TODO in TDS:** block targets currently use `weekly_target` (session count). These should be extended to support volume and exposure targets per the measurement unit of each dimensionality slot. Needs resolution before Stage 3 implementation.
+- **`workouts_per_week`** — number of training sessions per week in this phase
+- **`exercises_per_workout`** — number of exercise slots per session in this phase
+- **`allocation`** — maps `(movement_plane, movement_type)` cells to dimensionality slot counts expressing how many exercise slots per session are assigned to each category
+- **`preset_key`** — optional pointer to a `SEGMENT_TEMPLATES` entry; stored for reference only; modifying the template after block creation does not retroactively affect the segment
+
+**Block budget** is always derived from segments and never stored at the block level:
+```
+budget = sum(workouts_per_week × exercises_per_workout × len(weeks))
+         for each segment
+```
+
+Segments support heterogeneous training phases within a single block: a 4-week GPP segment at 6 exercises per workout followed by a 1-week peaking segment at 4 exercises per workout, then back to GPP. A rest or deload phase is modeled as a near-zero allocation segment with minimal exercises per workout.
+
+**Presets are optional.** Any segment can be configured from scratch without referencing a template. When used, presets supply a proportional allocation pattern that scales to any exercise budget — a user with 20 exercises per week and one with 40 per week can apply the same template and receive proportionally scaled allocations.
+
+Progress is measured by volume accumulated, session exposure, and output metrics per dimensionality slot — not by elapsed time. Time is a view; the authoritative progress signal is what was done, not how long the block has been running.
 
 ---
 
@@ -138,7 +153,7 @@ All pure functions — no side effects, deterministic, testable in isolation. `t
 | `compute_ddm` | Desirable Difficulty Max — implied 1RM proxy averaged across 2–4 canonical schemes | Requires ≥2 schemes in 90-day window; returns `None` otherwise |
 | `compute_weight_suggestions` | Per-scheme weight targets from DDM | Dict comprehension over `CANONICAL_SCHEMES` |
 | `compute_blended_adaptation` | Volume-weighted blended color + vesting % for mixed-stimulus sessions | Hex-to-RGB string slicing; no external color library |
-| `build_session` | Full session prescription for today | Matrix plan, records, exercise library, block targets, week bounds |
+| `build_session` | Surfaces a session plan for the day based on category deficits across the active segment | Matrix plan, records, exercise library, active segment, week bounds |
 
 **Key V1.0.2 change:** `check_intra_cell_variation` and `check_stimulus_interleaving` removed as standalone functions. Their logic is now internal steps inside `build_session`.
 
@@ -191,7 +206,7 @@ Authoritative block structure and targets live in `__training_blocks` (Section 5
 
 Not yet implemented. Data model from V1 is sufficient to support both when mechanics are defined.
 
-- **Competitive Platform (§8):** deterministic scoring, handicap system, peer group comparison, radar grid positioning using `PRESET_MATRIX_CONFIGS` axes, temporal challenges. Multi-dimensional leaderboards (filterable high-score boards) are V1 and specified in Section 8 above.
+- **Competitive Platform (§8):** deterministic scoring, handicap system, peer group comparison, radar grid positioning using `SEGMENT_TEMPLATES` axes, temporal challenges. Multi-dimensional leaderboards (filterable high-score boards) are V1 and specified in Section 8 above.
 - **AI Data Access Layer (§9):** all `MtrxApp` methods are designed as LLM tool endpoints (return `dict` / `list[dict]` / `pd.DataFrame`). Agent modifies plans through the same validated API surface — no bypassing validation or plan history.
 
 ---
@@ -200,7 +215,7 @@ Not yet implemented. Data model from V1 is sufficient to support both when mecha
 
 | Stage | File(s) | Deliverable |
 |---|---|---|
-| 1 | `mtrx_constants.py` | All constants; assert BLANK config has 24 plane × movement combinations each populated with dimensionality slots; assert 5 measurement units; assert no `PRIORITY_TARGETS` |
+| 1 | `mtrx_constants.py` | All constants; assert `SEGMENT_TEMPLATES['BLANK']` has 24 plane × movement combinations each populated with dimensionality slots; assert 5 measurement units; assert no `PRIORITY_TARGETS` |
 | 2 | `mtrx_functions.py` | All pure functions; unit-tested with hardcoded inputs |
 | 3 | `mtrx_database.py` | All entities in build order; integration between entities tested |
 | 4 | `mtrx_app.py` | `MtrxApp` controller; end-to-end flow from registration to session generation |
@@ -213,7 +228,7 @@ Not yet implemented. Data model from V1 is sufficient to support both when mecha
 
 ## Key Cross-Cutting Invariants
 
-- **`deepcopy` on user creation** — category plan preset must be deep-copied; shallow copy shares mutable lists across users.
+- **`deepcopy` on user creation** — `SEGMENT_TEMPLATES['BLANK']` grid must be deep-copied into each user's category plan; shallow copy shares mutable lists across users.
 - **Parent weight never stored** — always `sum(cat['weight'] for cat in cell['categories'])`; prevents sync errors.
 - **Records flat list** — `pd.DataFrame(records)` is the universal aggregation entry point; never nest by user or date.
 - **`today` always explicit** — no `datetime.date.today()` inside pure functions; enables deterministic back-testing.
