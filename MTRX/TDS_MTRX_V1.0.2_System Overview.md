@@ -45,7 +45,7 @@ Fixed values imported wherever needed. Never passed as arguments, never modified
 | `STIMULUS_TABLE` | Four stimulus types (N/MT/MD/MS) with adaptation days, fatigue days, and hex color | `classify_stimulus`, vesting calculations, color rendering |
 | `CANONICAL_SCHEMES` | Four rep schemes (3×2, 3×5, 3×10, 3×20) each mapped to a stimulus type and a % of DDM | `compute_ddm`, `compute_weight_suggestions` |
 | `MEASUREMENT_UNITS` | Five unit types (VOLUME, DURATION, DISTANCE, LOAD_DISTANCE, REPS_ONLY) with required fields per unit | Record validation in `add_record`; prescription logic in `build_session` |
-| `SEGMENT_TEMPLATES` | BLANK: default category plan template with all 24 plane × movement combinations pre-populated with dimensionality slots, weights zero. Named presets (GPP, STRENGTH, etc.): optional, scale-adaptable allocation pattern templates applied at the segment level within training blocks; proportional distributions that scale to any exercise budget | `add_user` deep-copies `BLANK` grid into `__matrix_plans`; segment `preset_key` optionally references a named preset |
+| `SEGMENT_TEMPLATES` | BLANK: default category plan template with all 24 plane × movement combinations pre-populated with classification slots, weights zero. Named presets (GPP, STRENGTH, etc.): optional, scale-adaptable allocation pattern templates applied at the segment level within training blocks; proportional distributions that scale to any exercise budget | `add_user` deep-copies `BLANK` grid into `__matrix_plans`; segment `preset_key` optionally references a named preset |
 | `MOVEMENT_PLANES / TYPES / etc.` | Controlled vocabulary sets for validation at every write boundary | All `add_*` and `update_*` methods |
 | `PROGRAM_START_DATE` | Single calendar anchor (2026-01-05) from which all week/block arithmetic derives | `get_program_week_bounds`, `get_block_label` |
 
@@ -68,7 +68,7 @@ Private state:
 | `__measurements` | `dict[int, list[dict]]` | Per-user bodyweight time series, sorted ascending by date |
 | `__exercises` | `dict[str, dict]` | Shared exercise library, keyed by normalized name |
 | `__records` | `list[dict]` | All workout records, flat, with `user_id` field |
-| `__matrix_plans` | `dict[int, dict[tuple, dict]]` | Per-user category plan: plane × movement combinations, each with dimensionality slots |
+| `__matrix_plans` | `dict[int, dict[tuple, dict]]` | Per-user category plan: plane × movement combinations, each with classification slots |
 | `__plan_history` | `dict[int, list[dict]]` | Append-only snapshots of matrix state over time |
 | `__training_blocks` | `dict[int, list[dict]]` | Per-user user-defined programming periods; each block contains an ordered segments list where each segment has independent `workouts_per_week`, `exercises_per_workout`, `allocation`, and optional `preset_key` |
 
@@ -86,18 +86,16 @@ Profile data plus `age` and `training_experience` (stored, not yet computed agai
 Bodyweight time series per user, kept sorted ascending. Used to auto-resolve `weight` at record-log time when `load_type == 'Bodyweight'`. The most-recent-on-or-before query is a forward scan — no index needed.
 
 ### 5.3 Exercise Library
-Shared across all users. Keyed by `exercise_name.strip().lower()` for dedup. Every exercise maps to a three-part identity: **plane × movement × dimensionality**. Each exercise record carries:
+Shared across all users. Keyed by `exercise_name.strip().lower()` for dedup. Every exercise maps to a three-part identity: **plane × movement × classification**. Each exercise record carries:
 
 - `movement_plane` + `movement_type` — the parent combination (e.g., `'Sagittal'`, `'Push'`)
-- `dimensionality` — the named slot within that combination (e.g., `'Vertical Press'`, `'Horizontal Press'`, or `'Downward Press'` within Sagittal Push)
+- `classification` — the named sub-category within that combination (e.g., `'Vertical Press'`, `'Horizontal Press'`, or `'Downward Press'` within Sagittal Push); validated at `add_exercise` time against `SEGMENT_TEMPLATES['BLANK']`
 - `laterality` — `Bilateral` or `Unilateral`; drives the ×2 volume multiplier at record time
 - `workout_type`, `default_load_type` — used for filtering and weight resolution
 
-Exercise names cannot be renamed (would orphan historical records). The `dimensionality` field is the formal link between the shared exercise library and the per-user category plan defined in 5.5; it is required for correct category-level aggregation in views and deficit calculation in the prescription engine.
+Exercise names cannot be renamed (would orphan historical records). The `classification` field is the formal link between the shared exercise library and the per-user category plan defined in 5.5; it is required for correct category-level aggregation in views and deficit calculation in the prescription engine.
 
 Duplicate entries (e.g. `'bench press'` vs `'bench-press'`) are resolved via `merge_exercises`, which re-points all historical records from the source name to the canonical target and removes the source entry without data loss.
-
-> **Open issue:** the `dimensionality` field is not present in the exercise schema in TDS §3.3. The `add_record` spec currently resolves category by "exercise characteristics or first match," which is ambiguous. This needs to be resolved before Stage 3 implementation.
 
 ### 5.4 Workout Records
 A flat `list[dict]`. Every view is a different aggregation; a flat list feeds `pd.DataFrame(records)` directly, supporting any pandas groupby or filter in one line. Records include nullable `duration_seconds` and `distance_meters` to support all five measurement units.
@@ -106,11 +104,11 @@ A flat `list[dict]`. Every view is a different aggregation; a flat list feeds `p
 Per-user hierarchical plan with two levels:
 
 - **Plane × movement combination** — keyed by `(movement_plane, movement_type)` tuple; 24 combinations in the default configuration (3 planes × 8 movement types)
-- **Dimensionality** — named slots within each combination (e.g., `'Vertical Press'`, `'Horizontal Press'`, `'Downward Press'` within `('Sagittal', 'Push')`), each carrying an integer `weight`, `measurement_unit`, and `exercise_examples`
+- **Classification** — named sub-categories within each combination (e.g., `'Vertical Press'`, `'Horizontal Press'`, `'Downward Press'` within `('Sagittal', 'Push')`), each carrying an integer `weight`, `measurement_unit`, and `exercise_examples`
 
-Parent weight is always derived (`sum` of dimensionality weights) — never stored — eliminating sync errors. The tuple key `(plane, type)` is the canonical join key used throughout the system to link exercises, records, and views back to the category plan.
+Parent weight is always derived (`sum` of classification weights) — never stored — eliminating sync errors. The tuple key `(plane, type)` is the canonical join key used throughout the system to link exercises, records, and views back to the category plan.
 
-**Key V1.0.2 change:** replaces the old flat structure of priority strings. The `exercise_examples` list on each dimensionality slot is a reference hint, not an enforcement mechanism — exercises are formally linked via the `dimensionality` field on the exercise record (see 5.3).
+**Key V1.0.2 change:** replaces the old flat structure of priority strings. The `exercise_examples` list on each classification slot is a reference hint, not an enforcement mechanism — exercises are formally linked via the `classification` field on the exercise record (see 5.3).
 
 ### 5.6 Plan History
 Append-only, timestamped snapshots of the full category plan state. Auto-triggered by any plan modification. Enables plan-vs-completed analysis even after the user later changes their configuration. All snapshots are `deepcopy` — mutation-isolated from the live plan.
@@ -120,7 +118,7 @@ User-defined programming periods containing an ordered list of segments. Each se
 
 - **`workouts_per_week`** — number of training sessions per week in this phase
 - **`exercises_per_workout`** — number of exercise slots per session in this phase
-- **`allocation`** — maps `(movement_plane, movement_type)` cells to dimensionality slot counts expressing how many exercise slots per session are assigned to each category
+- **`allocation`** — maps `(movement_plane, movement_type)` cells to classification slot counts expressing how many exercise slots per session are assigned to each category
 - **`preset_key`** — optional pointer to a `SEGMENT_TEMPLATES` entry; stored for reference only; modifying the template after block creation does not retroactively affect the segment
 
 **Block budget** is always derived from segments and never stored at the block level:
@@ -133,7 +131,7 @@ Segments support heterogeneous training phases within a single block: a 4-week G
 
 **Presets are optional.** Any segment can be configured from scratch without referencing a template. When used, presets supply a proportional allocation pattern that scales to any exercise budget — a user with 20 exercises per week and one with 40 per week can apply the same template and receive proportionally scaled allocations.
 
-Progress is measured by volume accumulated, session exposure, and output metrics per dimensionality slot — not by elapsed time. Time is a view; the authoritative progress signal is what was done, not how long the block has been running.
+Progress is measured by volume accumulated, session exposure, and output metrics per classification slot — not by elapsed time. Time is a view; the authoritative progress signal is what was done, not how long the block has been running.
 
 ---
 
@@ -168,7 +166,7 @@ View functions accept flat records + supporting data, return a `pd.DataFrame`. A
 | `build_summary_matrix` | Volume by exercise and stimulus type in realized / unrealized / fatigue / non-fatigue buckets; filterable by period (all-time, last 30/60/90 days, YTD, TTM) | `groupby(['workout_type', 'exercise_name', 'stimulus']).agg(...)` |
 | `build_vesting_grid` | Per-exercise per-date volume (adaptation window only by default) | `pivot_table(index='date', columns='exercise_name')` |
 | `build_color_matrix` | Companion to vesting grid; blended hex+pct per (date, exercise) cell | Calls `compute_blended_adaptation` per cell |
-| `build_program_balance` | Plan vs. completed sessions per dimensionality across all plane × movement combinations, with period status | Iterates `MOVEMENT_PLANES_ORDERED × MOVEMENT_TYPES_ORDERED` |
+| `build_program_balance` | Plan vs. completed sessions per classification across all plane × movement combinations, with period status | Iterates `MOVEMENT_PLANES_ORDERED × MOVEMENT_TYPES_ORDERED` |
 | `build_weight_guidance` | DDM + four scheme weight suggestions for one exercise | Calls `compute_ddm` → `compute_weight_suggestions` |
 
 **Display-layer rule:** pivoting, coloring, and formatting happen in `mtrx_app.py`. View functions return long-format (tidy) data only.
@@ -181,9 +179,11 @@ Filterable high-score standings across users. A single `build_leaderboard` funct
 
 | Parameter | Options |
 |---|---|
-| **Filter scope** | Full library total, specific exercise, dimensionality slot, plane × movement combination, workout type |
+| **Filter scope** | Full library total, specific exercise, classification, plane × movement combination, workout type |
 | **Period window** | All-time, last 30 days, last 60 days, last 90 days, YTD, TTM |
-| **Metric** | Volume, session exposure (count), or other output measure |
+| **Metric** | `volume` (total volume), `reps` (total reps), `max_load` (highest single weight), `session_count` (distinct dates), `exercise_count` (distinct exercises) |
+
+All users are included by default. Filters are cumulative (AND logic). Period windows are resolved by `MtrxApp` to explicit date ranges before calling the function.
 
 Leaderboards are not tied to the competitive scoring or handicap system (V2). They are direct ranked aggregations of the same records used by all other views, making them composable with any existing filter.
 
@@ -215,7 +215,7 @@ Not yet implemented. Data model from V1 is sufficient to support both when mecha
 
 | Stage | File(s) | Deliverable |
 |---|---|---|
-| 1 | `mtrx_constants.py` | All constants; assert `SEGMENT_TEMPLATES['BLANK']` has 24 plane × movement combinations each populated with dimensionality slots; assert 5 measurement units; assert no `PRIORITY_TARGETS` |
+| 1 | `mtrx_constants.py` | All constants; assert `SEGMENT_TEMPLATES['BLANK']` has 24 plane × movement combinations each populated with classification slots; assert 5 measurement units; assert no `PRIORITY_TARGETS` |
 | 2 | `mtrx_functions.py` | All pure functions; unit-tested with hardcoded inputs |
 | 3 | `mtrx_database.py` | All entities in build order; integration between entities tested |
 | 4 | `mtrx_app.py` | `MtrxApp` controller; end-to-end flow from registration to session generation |
@@ -233,5 +233,5 @@ Not yet implemented. Data model from V1 is sufficient to support both when mecha
 - **Records flat list** — `pd.DataFrame(records)` is the universal aggregation entry point; never nest by user or date.
 - **`today` always explicit** — no `datetime.date.today()` inside pure functions; enables deterministic back-testing.
 - **Exercise names immutable** — records reference exercises by name; use `merge_exercises` to consolidate duplicates rather than rename.
-- **Plan history on every plan change** — `save_config_snapshot` is called inside `update_matrix_cell` and `add_category`, not by the caller.
+- **Plan history on every plan change** — `save_config_snapshot` is called inside `update_category_plan_cell` and `add_classification`, not by the caller.
 - **No business logic in `MtrxApp`** — orchestration only; all computation delegated to `mtrx_functions`.

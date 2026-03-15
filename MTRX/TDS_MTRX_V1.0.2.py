@@ -124,7 +124,7 @@ source of truth. DDM derivation and weight suggestion functions use
 # ── 1.3 REMOVED IN V1.0.2 ─────────────────────────────────────────────────────
 # PRIORITY_TARGETS dict and PRIORITY_OPTIONS set have been removed.
 # Both are replaced by per-category weights in SEGMENT_TEMPLATES (Section 1.4).
-# PRIORITY_OPTIONS was used only to validate update_matrix_cell(priority: str),
+# PRIORITY_OPTIONS was used only to validate update_category_plan_cell(priority: str),
 # which no longer accepts a priority string -- it now accepts a categories list.
 
 # ── 1.4 Category Structure ────────────────────────────────────────────────────
@@ -418,7 +418,7 @@ SEGMENT_TEMPLATES serves two distinct purposes:
 
 1. CATEGORY PLAN SEEDING (BLANK):
    BLANK is the default entry. All 24 parent categories are pre-populated with
-   their dimensionality slots and measurement units; all weights are 0. The user
+   their classification slots and measurement units; all weights are 0. The user
    sets weights after registration to express their training priorities.
 
    add_user calls copy.deepcopy(SEGMENT_TEMPLATES[preset]['grid']) to seed the
@@ -439,8 +439,8 @@ SEGMENT_TEMPLATES serves two distinct purposes:
    Users can build blocks without using any preset.
 
 The 24 parent categories correspond to the initial 3 planes x 8 movement types.
-Additional parent categories can be appended via add_category without structural
-change -- the structure is an appendable list, not a fixed grid.
+Additional parent categories can be appended via add_classification without
+structural change -- the structure is an appendable list, not a fixed grid.
 
 The tuple key (movement_plane, movement_type) is preserved as the canonical
 join key across the exercise library, records, and all views (unchanged from
@@ -465,7 +465,7 @@ LOAD_TYPES       = {'Band', 'Barbell', 'Bodyweight', 'Cable', 'Curl Bar',
                     'Dumbbell', 'Kettlebell', 'Machine', 'Medicineball', 'N/A'}
 
 # Note: PRIORITY_OPTIONS removed in V1.0.2. Priority validation is no longer
-# required -- update_matrix_cell now accepts a categories list, not a priority string.
+# required -- update_category_plan_cell now accepts a categories list, not a priority string.
 # (See Section 1.3 tombstone and Section 3.5 for updated method signatures.)
 
 # Ordered lists for deterministic iteration over the category list.
@@ -635,7 +635,7 @@ self.__plan_history: dict[int, list[dict]]
 
 An append-only, timestamped snapshot of the full matrix state per user.
 A new snapshot is appended automatically whenever any matrix modification
-occurs (via update_matrix_cell, add_category, or preset change).
+occurs (via update_category_plan_cell, add_classification, or preset change).
 The plan history provides plan-side data for plan-vs-completed analysis
 and supports the competitive platform's radar grid positioning.
 
@@ -686,7 +686,7 @@ def save_config_snapshot(self, user_id: int) -> int:
     # 5. self.__config_counter += 1
     # 6. return snapshot_id
     #
-    # Called internally by update_matrix_cell and add_category.
+    # Called internally by update_category_plan_cell and add_classification.
     # Not a public user action.
 
 def get_active_config(self, user_id: int) -> dict:
@@ -765,6 +765,7 @@ Example state:
         'default_load_type':'Barbell',
         'movement_type':    'Push',
         'movement_plane':   'Sagittal',
+        'classification':   'Horizontal Press',
     },
     'single-arm dumbbell row': {
         'exercise_name':    'Single-Arm Dumbbell Row',
@@ -773,6 +774,7 @@ Example state:
         'default_load_type':'Dumbbell',
         'movement_type':    'Pull',
         'movement_plane':   'Sagittal',
+        'classification':   'Horizontal Pull',
     },
 }
 
@@ -786,17 +788,34 @@ does not need to be the storage key.
 NORMALIZATION RULE: exercise_name.strip().lower() is used as the key in all read
 and write operations. The display name ('exercise_name' in the value dict)
 preserves original casing.
+
+CLASSIFICATION FIELD:
+The 'classification' field on each exercise is the formal link between the shared
+exercise library and the per-user category plan. It must match a sub-category
+'name' within the exercise's (movement_plane, movement_type) cell in
+SEGMENT_TEMPLATES['BLANK']. This is validated at add_exercise time. The field is
+required for deterministic measurement_unit resolution at record-log time,
+correct category-level aggregation in views, and deficit calculation in the
+prescription engine.
 """
 
 EXERCISES_METHODS = """
 def add_exercise(self, exercise_name: str, workout_type: str, laterality: str,
                  default_load_type: str, movement_type: str,
-                 movement_plane: str) -> str:
+                 movement_plane: str, classification: str) -> str:
     # 1. key = exercise_name.strip().lower()
     # 2. if key in self.__exercises: raise ValueError('Duplicate exercise name')
     # 3. Validate each attribute against controlled vocabulary constants
-    # 4. self.__exercises[key] = {'exercise_name': exercise_name, ...}
-    # 5. return exercise_name
+    # 4. Validate classification: cell = SEGMENT_TEMPLATES['BLANK']['grid'][
+    #        (movement_plane, movement_type)]
+    #    if not any(cat['name'] == classification for cat in cell['categories']):
+    #        raise ValueError(f'classification {classification!r} not found in '
+    #                         f'{movement_plane}/{movement_type} sub-categories')
+    # 5. self.__exercises[key] = {'exercise_name': exercise_name,
+    #        'workout_type': workout_type, 'laterality': laterality,
+    #        'default_load_type': default_load_type, 'movement_type': movement_type,
+    #        'movement_plane': movement_plane, 'classification': classification}
+    # 6. return exercise_name
 
 def update_exercise(self, exercise_name: str, **kwargs) -> None:
     # 1. key = exercise_name.strip().lower()
@@ -834,7 +853,7 @@ def merge_exercises(self, source_name: str, target_name: str) -> int:
     # 3. if target_key not in self.__exercises: raise KeyError
     # 4. if source_key == target_key: raise ValueError('Cannot merge exercise with itself')
     # 5. Verify both exercises share the same movement_plane, movement_type,
-    #    and dimensionality. Raise ValueError if they differ -- merging across
+    #    and classification. Raise ValueError if they differ -- merging across
     #    categories would corrupt category-level aggregations.
     #
     # Merge:
@@ -935,11 +954,16 @@ def add_record(self, user_id: int, date: datetime.date, exercise_name: str,
     # 2. exercise = self.get_exercise(exercise_name)  -- raises KeyError if not found
     # 3. Validate load_type in LOAD_TYPES (if provided)
     # 3b. Validate required fields for measurement_unit:
-    #        Look up the exercise's cell: cell_key = (exercise['movement_plane'],
-    #                                                  exercise['movement_type'])
-    #        Get the user's matrix plan: plan = self.__matrix_plans[user_id]
-    #        Find the matching category (by exercise characteristics or first match).
-    #        Resolve measurement_unit from the category.
+    #        Look up the exercise's classification:
+    #            classification = exercise['classification']
+    #        Look up the exercise's cell:
+    #            cell_key = (exercise['movement_plane'], exercise['movement_type'])
+    #        Get the user's matrix plan:
+    #            plan = self.__matrix_plans[user_id]
+    #        Find the matching sub-category by name:
+    #            cat = next(c for c in plan[cell_key]['categories']
+    #                       if c['name'] == classification)
+    #        Resolve measurement_unit from that sub-category.
     #        Verify the record supplies the fields listed in
     #        MEASUREMENT_UNITS[unit]['fields']. Raise ValueError if required fields
     #        are missing or None.
@@ -1069,7 +1093,7 @@ always derived. This eliminates sync errors between stored and computed totals.
 """
 
 MATRIX_PLAN_METHODS = """
-def update_matrix_cell(self, user_id: int, movement_plane: str,
+def update_category_plan_cell(self, user_id: int, movement_plane: str,
                        movement_type: str, categories: list) -> None:
     # Replaces the full categories list for a cell.
     # 1. Validate user_id, movement_plane in MOVEMENT_PLANES,
@@ -1082,11 +1106,11 @@ def update_matrix_cell(self, user_id: int, movement_plane: str,
     #    }
     # 5. self.save_config_snapshot(user_id)   # trigger plan history snapshot
 
-def add_category(self, user_id: int, movement_plane: str,
+def add_classification(self, user_id: int, movement_plane: str,
                  movement_type: str, name: str, weight: int,
                  measurement_unit: str,
                  exercise_examples: list = None) -> None:
-    # Appends a new category to an existing cell.
+    # Appends a new sub-category to an existing cell.
     # 1. Validate user_id, movement_plane, movement_type
     # 2. Validate measurement_unit in MEASUREMENT_UNITS
     # 3. self.__matrix_plans[user_id][(movement_plane, movement_type)]['categories'].append({
@@ -1095,7 +1119,7 @@ def add_category(self, user_id: int, movement_plane: str,
     #    })
     # 4. self.save_config_snapshot(user_id)   # trigger plan history snapshot
 
-def get_matrix_plan(self, user_id: int) -> dict:
+def get_category_plan(self, user_id: int) -> dict:
     # Returns a deep copy of the hierarchical matrix for one user.
     # return copy.deepcopy(self.__matrix_plans[user_id])
 
@@ -1178,8 +1202,8 @@ BLOCK BUDGET (always derived, never stored):
         Total:        208 exercise slots over the 9-week block.
 
 ALLOCATION DICT:
-Maps (movement_plane, movement_type) cells to dimensionality slots with per-workout
-slot counts. The integer value for each dimensionality name is the number of
+Maps (movement_plane, movement_type) cells to classification slots with per-workout
+slot counts. The integer value for each classification name is the number of
 exercise slots assigned per session. Allocation sums within a segment typically
 equal exercises_per_workout, but this is a planning target, not enforced.
 
@@ -1205,7 +1229,7 @@ periods, not derived arithmetically from PROGRAM_START_DATE.
 
 PROGRESS SIGNAL:
 Progress is measured by volume accumulated, session exposure, and other output
-metrics per dimensionality slot -- not by elapsed time. Time is a view; the
+metrics per classification slot -- not by elapsed time. Time is a view; the
 authoritative progress signal is what was completed, not how long the block
 has been running.
 """
@@ -1226,7 +1250,7 @@ def add_training_block(self, user_id: int, name: str,
     #        - 'weeks' is a non-empty list of positive integers
     #        - workouts_per_week and exercises_per_workout are positive integers
     #        - each (plane, type) key in allocation is in MOVEMENT_PLANES x MOVEMENT_TYPES
-    #        - each dimensionality name referenced in allocation exists in the
+    #        - each classification name referenced in allocation exists in the
     #          user's category plan for the corresponding cell
     #        - 'preset_key' is either None or a key in SEGMENT_TEMPLATES
     # 4. Derive end_date:
@@ -1271,7 +1295,7 @@ def get_active_segment(self, user_id: int, block_id: int,
 
 def get_block_progress(self, user_id: int, block_id: int) -> dict:
     # Returns plan vs. completed per segment, with allocation coverage
-    # and output metrics per dimensionality slot.
+    # and output metrics per classification slot.
     #
     # Structure:
     # {
@@ -1284,7 +1308,7 @@ def get_block_progress(self, user_id: int, block_id: int) -> dict:
     #             'allocation':    dict,
     #             'progress': {
     #                 (plane, type): {
-    #                     dimensionality_name: {
+    #                     classification_name: {
     #                         'allocated_slots': int,    # from segment allocation
     #                         'sessions_logged': int,    # records in this segment's date range
     #                         'volume_logged':   float | None,
@@ -1552,7 +1576,7 @@ def build_session(matrix_plan: dict,
         {
             'slot':             int,            # position in session (1-based)
             'cell':             (str, str),     # (movement_plane, movement_type)
-            'category':         str,            # dimensionality name
+            'classification':    str,            # sub-category name
             'measurement_unit': str,            # from category definition
             'primary': {
                 'exercise_name':    str,
@@ -1984,6 +2008,79 @@ def build_weight_guidance(exercise_name: str,
     }
 
 
+# ── 6.5 Leaderboard ──────────────────────────────────────────────────────────
+
+LEADERBOARD_SPEC = """
+def build_leaderboard(records: list,
+                      exercises: dict,
+                      today: datetime.date,
+                      user_ids: list = None,
+                      exercise_name: str = None,
+                      workout_type: str = None,
+                      movement_plane: str = None,
+                      movement_type: str = None,
+                      classification: str = None,
+                      period_start: datetime.date = None,
+                      period_end: datetime.date = None,
+                      metric: str = 'volume',
+                      top_n: int = None) -> pd.DataFrame:
+    # Returns ranked standings across users. All users are included by default
+    # (user_ids=None). Period windows (last 30/60/90, YTD, TTM, all-time) are
+    # resolved by the caller (MtrxApp) before calling this function -- this
+    # function accepts explicit dates only, same pattern as build_summary_matrix.
+    #
+    # METRICS:
+    #   'volume'          — sum of actual_volume (sets * reps * weight, ×2 unilateral)
+    #   'reps'            — sum of actual_reps (sets * reps + bonus_reps)
+    #   'max_load'        — max weight logged for a single record
+    #   'session_count'   — count of distinct dates with at least one record
+    #   'exercise_count'  — count of distinct exercise names logged
+    #
+    # FILTER LOGIC:
+    #   Filters are applied cumulatively (AND). Each non-None filter narrows
+    #   the record set before aggregation:
+    #     - user_ids:        [r for r in records if r['user_id'] in user_ids]
+    #     - exercise_name:   match by normalized name (strip().lower())
+    #     - workout_type:    match via exercises dict lookup
+    #     - movement_plane:  match via exercises dict lookup
+    #     - movement_type:   match via exercises dict lookup
+    #     - classification:  match via exercises dict lookup on 'classification' field
+    #     - period_start:    r['date'] >= period_start
+    #     - period_end:      r['date'] <= period_end
+    #
+    # AGGREGATION:
+    #   1. Build DataFrame from filtered records
+    #   2. Filter to VOLUME-measurable records (reps.notna()) for volume/reps/max_load
+    #      metrics; session_count and exercise_count use all records regardless
+    #   3. Add derived columns: actual_reps, laterality, actual_volume (same pattern
+    #      as build_summary_matrix)
+    #   4. Group by user_id and compute the selected metric:
+    #        volume:         df.groupby('user_id')['actual_volume'].sum()
+    #        reps:           df.groupby('user_id')['actual_reps'].sum()
+    #        max_load:       df.groupby('user_id')['weight'].max()
+    #        session_count:  df.groupby('user_id')['date'].nunique()
+    #        exercise_count: df.groupby('user_id')['exercise_name'].nunique()
+    #   5. Sort descending by metric value
+    #   6. Assign rank (1-based, dense ranking)
+    #   7. If top_n is not None, return only the first top_n rows
+    #
+    # OUTPUT:
+    #   pd.DataFrame with columns:
+    #     rank:         int    — 1-based position
+    #     user_id:      int
+    #     metric_value: float  — the aggregated value for the selected metric
+    #
+    # CALLER (MtrxApp):
+    #   get_leaderboard(metric='volume', period='all_time', exercise_name=None,
+    #                   workout_type=None, movement_plane=None,
+    #                   movement_type=None, classification=None,
+    #                   user_ids=None, top_n=None)
+    #   MtrxApp resolves period string to (period_start, period_end), calls
+    #   db.get_records() and db.get_all_exercises(), then passes to
+    #   build_leaderboard.
+"""
+
+
 
 ###############################################################################
 # SECTION 7: PROGRAM CALENDAR AND TRAINING BLOCKS
@@ -2034,9 +2131,9 @@ def get_block_label(target_date: datetime.date, weeks_per_block: int = 4) -> str
 #
 # PLAN-VS-COMPLETED TRACKING:
 #   Plan:      The allocation dict in each segment — exercise slots assigned
-#              per dimensionality per workout for each phase of the block.
+#              per classification per workout for each phase of the block.
 #   Completed: Derived from records filtered to the segment's date range,
-#              aggregated by category and dimensionality.
+#              aggregated by category and classification.
 #   Progress:  Per-segment allocation coverage (sessions logged vs. slots
 #              allocated) and output metrics (volume, exposure), displayed
 #              as a tracking view.
@@ -2051,7 +2148,7 @@ def get_block_label(target_date: datetime.date, weeks_per_block: int = 4) -> str
 #   Use get_program_week_bounds(date) to align records to program weeks.
 #   Segment date ranges are derived from block start_date and segment 'weeks'
 #   lists. get_block_progress iterates each segment, computes sessions and
-#   volume per dimensionality from records, and compares against allocation.
+#   volume per classification from records, and compares against allocation.
 #
 # NOTE ON get_block_label:
 #   get_block_label (Section 7.1) produces display strings (e.g. 'Round 2 |
@@ -2153,7 +2250,7 @@ time period. Any combination of filters is valid.
 Filter scope options:
   - Full library total (all exercises, all categories)
   - Specific exercise (e.g. Bench Press all-time volume)
-  - Dimensionality slot (e.g. Horizontal Press exposure)
+  - Classification (e.g. Horizontal Press exposure)
   - Plane x movement combination (e.g. Sagittal Push total volume)
   - Workout type
 
@@ -2356,21 +2453,21 @@ BUILD ORDER:
                        distance_meters; add_record validates required fields
                        per category's measurement_unit
 5. __matrix_plans   seeded at user creation via deepcopy of SEGMENT_TEMPLATES
-                    + update_matrix_cell(user_id, movement_plane, movement_type,
+                    + update_category_plan_cell(user_id, movement_plane, movement_type,
                                          categories: list)
-                      + add_category(user_id, movement_plane, movement_type,
+                      + add_classification(user_id, movement_plane, movement_type,
                                      name, weight, measurement_unit,
                                      exercise_examples=None)
-                      + get_matrix_plan(user_id)
+                      + get_category_plan(user_id)
                       + get_parent_weight(user_id, movement_plane, movement_type)
                     -- verify deepcopy isolation (two users don't share lists),
-                       update_matrix_cell triggers save_config_snapshot,
-                       add_category appends without destroying existing;
+                       update_category_plan_cell triggers save_config_snapshot,
+                       add_classification appends without destroying existing;
                        remove get_cell_priority (no longer exists)
 6. __plan_history   + save_config_snapshot(user_id)
                       + get_active_config(user_id)
                       + get_plan_history(user_id)
-                    -- verify snapshot appended on every update_matrix_cell call;
+                    -- verify snapshot appended on every update_category_plan_cell call;
                        verify get_active_config returns most recent snapshot;
                        verify snapshots are deep copies (mutation isolation);
                        verify config_counter increments
@@ -2380,7 +2477,7 @@ BUILD ORDER:
                        + get_block_progress(user_id, block_id)
                      -- verify non-empty segments list required;
                         verify each segment has required keys;
-                        verify dimensionality names validated against user's category plan;
+                        verify classification names validated against user's category plan;
                         verify end_date derived from max week across all segments;
                         verify get_active_segment returns correct segment for a given date;
                         verify get_block_progress returns per-segment progress breakdown;
@@ -2421,8 +2518,8 @@ KEY METHODS:
   get_summary_matrix(user_id, metric)          -> build_summary_matrix
   get_vesting_grid(user_id, axis_filter, metric) -> build_vesting_grid
   get_program_balance(user_id, period, view_mode) -> build_program_balance
-  update_matrix_cell(user_id, plane, mtype,
-                     categories)               -> db.update_matrix_cell
+  update_category_plan_cell(user_id, plane, mtype,
+                     categories)               -> db.update_category_plan_cell
                                                   (triggers save_config_snapshot)
   add_training_block(user_id, name,
                      start_date, segments)            -> db.add_training_block
@@ -2430,10 +2527,12 @@ KEY METHODS:
   get_active_segment(user_id, block_id, as_of=None)   -> db.get_active_segment
   get_block_progress(user_id, block_id)               -> db.get_block_progress
   get_plan_history(user_id)                           -> db.get_plan_history
+  get_leaderboard(metric, period, ...)                -> build_leaderboard
 
 TEST: Register 2 users with different presets. Add exercises. Log workouts
 including non-VOLUME measurement units. Call generate_session. Verify block
-progress tracking. Verify plan history grows on matrix changes.
+progress tracking. Verify plan history grows on matrix changes. Verify
+leaderboard returns ranked standings with correct filters.
 
 
 === STAGE 5 — Visualization & Reports ===

@@ -11,7 +11,7 @@ Check each item to include in V1. Leave unchecked to defer.
 - [V1] **STIMULUS_TABLE** — defines the four stimulus types (N, MT, MD, MS) with adaptation window, fatigue window, and display color for each.
 - [V1] **CANONICAL_SCHEMES** — defines the four standard rep schemes (3×2, 3×5, 3×10, 3×20) with their associated stimulus type and percentage of DDM.
 - [V1] **MEASUREMENT_UNITS** — defines the five exercise measurement unit types (VOLUME, DURATION, DISTANCE, LOAD_DISTANCE, REPS_ONLY) and the required data fields for each.
-- [V1] **SEGMENT_TEMPLATES — BLANK** — the default empty category plan template with all 24 plane × movement combinations pre-populated with dimensionality slots and weights set to zero; seeded into each new user's plan via `deepcopy` on `add_user`.
+- [V1] **SEGMENT_TEMPLATES — BLANK** — the default empty category plan template with all 24 plane × movement combinations pre-populated with classification slots and weights set to zero; seeded into each new user's plan via `deepcopy` on `add_user`.
 - [ ] **SEGMENT_TEMPLATES — named presets** (GPP, STRENGTH, HYPERTROPHY, POWERLIFTING, FUNCTIONAL) — optional, scale-adaptable allocation pattern templates; applied at the segment level when building training blocks; proportional distributions that scale to any exercise budget; currently empty stubs in the TDS.
 - [V1] **Controlled vocabulary sets** (MOVEMENT_PLANES, MOVEMENT_TYPES, WORKOUT_TYPES, LATERALITY, LOAD_TYPES) — validation sets used at every write boundary to reject invalid inputs.
 - [V1] **PROGRAM_START_DATE** — single calendar anchor from which all week-number and block-label arithmetic is derived; required by `get_program_week_bounds` and segment week arithmetic.
@@ -37,12 +37,12 @@ Check each item to include in V1. Leave unchecked to defer.
 ---
 
 ## Exercise Library
-*`MtrxDatabase` — shared across all users; links exercises to plane × movement × dimensionality.*
+*`MtrxDatabase` — shared across all users; links exercises to plane × movement × classification.*
 
-- [V1] **`add_exercise`** — adds a new exercise to the shared library with its plane, movement type, dimensionality slot, laterality, workout type, and default load type.
+- [V1] **`add_exercise`** — adds a new exercise to the shared library with its plane, movement type, classification, laterality, workout type, and default load type.
 - [V1] **`get_exercise`** — retrieves one exercise record by name (case-insensitive).
 - [V1] **`get_exercises_for_cell`** — returns all exercise names mapped to a given plane × movement combination; used by the prescription engine and views.
-- [V1]] **`get_all_exercises`** — returns the full exercise library dict; required by view functions that need to look up exercise attributes across all records.
+- [V1] **`get_all_exercises`** — returns the full exercise library dict; required by view functions that need to look up exercise attributes across all records.
 - [V1] **`update_exercise`** — updates attributes of an existing exercise (name change is blocked to protect historical records).
 - [V1] **`delete_exercise`** — removes an exercise from the library; blocked if any workout records reference it.
 - [ ] **`merge_exercises`** — re-points all historical records from a source exercise name to a canonical target name, then removes the source entry; resolves duplicates like 'bench press' / 'bench-press' without data loss.
@@ -59,12 +59,12 @@ Check each item to include in V1. Leave unchecked to defer.
 ---
 
 ## Category Plans
-*`MtrxDatabase` — per-user hierarchical plan: plane × movement combinations each containing dimensionality slots.*
+*`MtrxDatabase` — per-user hierarchical plan: plane × movement combinations each containing classification slots.*
 
-- [V1] **`update_category_plan_cell`** — replaces the full list of dimensionality slots for one plane × movement combination; auto-triggers a plan history snapshot.
-- [V1] **`add_dimensionality`** — appends a new dimensionality slot to an existing plane × movement combination without affecting existing slots; auto-triggers a plan history snapshot.
+- [V1] **`update_category_plan_cell`** — replaces the full list of classification slots for one plane × movement combination; auto-triggers a plan history snapshot.
+- [V1] **`add_classification`** — appends a new classification slot to an existing plane × movement combination without affecting existing slots; auto-triggers a plan history snapshot.
 - [V1] **`get_category_plan`** — returns a deep copy of the full hierarchical plan for one user.
-- [V1] **`get_parent_weight`** — computes and returns the derived parent weight (sum of dimensionality weights) for one plane × movement combination.
+- [V1] **`get_parent_weight`** — computes and returns the derived parent weight (sum of classification weights) for one plane × movement combination.
 
 ---
 
@@ -80,10 +80,10 @@ Check each item to include in V1. Leave unchecked to defer.
 ## Training Blocks
 *`MtrxDatabase` — user-defined programming periods containing ordered segments; each segment has independent allocation, workouts_per_week, and exercises_per_workout.*
 
-- [V1] **`add_training_block`** — creates a named programming period with a start date and an ordered segments list; each segment specifies `weeks`, `workouts_per_week`, `exercises_per_workout`, `allocation` (dimensionality slot counts per workout), and an optional `preset_key`; block budget and end date are derived from segments.
+- [V1] **`add_training_block`** — creates a named programming period with a start date and an ordered segments list; each segment specifies `weeks`, `workouts_per_week`, `exercises_per_workout`, `allocation` (classification slot counts per workout), and an optional `preset_key`; block budget and end date are derived from segments.
 - [V1] **`get_active_block`** — returns the training block covering a given date (defaults to today); returns `None` if no block is active.
 - [V1] **`get_active_segment`** — returns the segment within a given block that covers a given date; used by the session planning engine to resolve current allocation and exercises_per_workout.
-- [V1] **`get_block_progress`** — returns per-segment allocation coverage and output metrics (volume accumulated, sessions logged) per dimensionality slot; surfaced as context — time elapsed is never the primary progress measure.
+- [V1] **`get_block_progress`** — returns per-segment allocation coverage and output metrics (volume accumulated, sessions logged) per classification slot; surfaced as context — time elapsed is never the primary progress measure.
 
 ---
 
@@ -135,7 +135,7 @@ Check each item to include in V1. Leave unchecked to defer.
 - [V1] **`get_summary_matrix`** — returns the summary volume aggregation for a user.
 - [V1] **`get_vesting_grid`** — returns the date × exercise adaptation grid for a user.
 - [ ] **`get_program_balance`** — returns plan vs. completed session counts across all plane × movement combinations for a given period.
-- [ ] **`update_category_plan_cell`** — replaces the dimensionality slots for one plane × movement combination in a user's plan.
+- [ ] **`update_category_plan_cell`** — replaces the classification slots for one plane × movement combination in a user's plan.
 - [V1] **`add_training_block`** — creates a training block with a start date and ordered segments list.
 - [V1] **`get_active_block`** — returns the active block for a given date.
 - [V1] **`get_active_segment`** — returns the segment covering a given date within the active block; required by `generate_session` to resolve current allocation.
@@ -155,7 +155,7 @@ Check each item to include in V1. Leave unchecked to defer.
 ## Leaderboards
 *`mtrx_functions.py` + `mtrx_app.py` — filterable high-score standings across users.*
 
-- [V1] **`build_leaderboard`** — returns ranked standings for any combination of users filterable by exercise, dimensionality, plane × movement combination, or full-library total; supports period windows of all-time, last 30 / 60 / 90 days, YTD, and TTM.
+- [V1] **`build_leaderboard`** — returns ranked standings for any combination of users filterable by exercise, classification, plane × movement combination, workout type, or full-library total; metrics include total volume, total reps, max load, session count, and exercise count; supports period windows of all-time, last 30 / 60 / 90 days, YTD, and TTM.
 
 ---
 
