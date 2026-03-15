@@ -12,6 +12,7 @@ import pandas as pd
 
 from database import WorkoutDatabase
 from functions import (
+    build_block_progress,
     build_color_matrix,
     build_leaderboard,
     build_summary_matrix,
@@ -189,7 +190,10 @@ class WorkoutApp:
         return self.__db.get_active_segment(user_id, block_id, as_of=as_of)
 
     def get_block_progress(self, user_id: int, block_id: int) -> dict:
-        return self.__db.get_block_progress(user_id, block_id)
+        block = self.__db.get_training_block(user_id, block_id)
+        records = self.__db.get_records(user_id=user_id)
+        exercises = self.__db.get_all_exercises()
+        return build_block_progress(block, records, exercises)
 
     # ── Leaderboard ───────────────────────────────────────────────────────────
 

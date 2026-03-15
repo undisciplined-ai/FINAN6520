@@ -164,6 +164,33 @@ def build_weight_guidance(exercise_name: str,
     }
 
 
+# ── Shared Enrichment ──────────────────────────────────────────────────────────
+
+def _enrich_records(df: pd.DataFrame,
+                    exercises: dict,
+                    today: datetime.date) -> pd.DataFrame:
+    df['stimulus'] = df['reps'].apply(lambda r: classify_stimulus(int(r)))
+    df['actual_reps'] = df.apply(
+        lambda r: compute_actual_reps(int(r['sets']), int(r['reps']),
+                                      int(r['bonus_reps']) if r['bonus_reps'] is not None else 0),
+        axis=1
+    )
+    df['laterality'] = df['exercise_name'].apply(
+        lambda x: exercises.get(x.strip().lower(), {}).get('laterality', 'Bilateral')
+    )
+    df['actual_volume'] = df.apply(
+        lambda r: compute_actual_volume(r['actual_reps'], r['weight'], r['laterality']),
+        axis=1
+    )
+    df['unrealized_pct'] = df.apply(
+        lambda r: compute_unrealized_vesting_pct(
+            r['date'], today, STIMULUS_TABLE[r['stimulus']]['adaptation_days']
+        ),
+        axis=1
+    )
+    return df
+
+
 # ── Summary Matrix ────────────────────────────────────────────────────────────
 
 def build_summary_matrix(user_id: int,
@@ -189,25 +216,7 @@ def build_summary_matrix(user_id: int,
     if df.empty:
         return pd.DataFrame()
 
-    df['stimulus'] = df['reps'].apply(lambda r: classify_stimulus(int(r)))
-    df['actual_reps'] = df.apply(
-        lambda r: compute_actual_reps(int(r['sets']), int(r['reps']),
-                                      int(r['bonus_reps']) if r['bonus_reps'] is not None else 0),
-        axis=1
-    )
-    df['laterality'] = df['exercise_name'].apply(
-        lambda x: exercises.get(x.strip().lower(), {}).get('laterality', 'Bilateral')
-    )
-    df['actual_volume'] = df.apply(
-        lambda r: compute_actual_volume(r['actual_reps'], r['weight'], r['laterality']),
-        axis=1
-    )
-    df['unrealized_pct'] = df.apply(
-        lambda r: compute_unrealized_vesting_pct(
-            r['date'], today, STIMULUS_TABLE[r['stimulus']]['adaptation_days']
-        ),
-        axis=1
-    )
+    df = _enrich_records(df, exercises, today)
     df['unrealized_volume'] = df.apply(
         lambda r: compute_unrealized_volume(r['actual_volume'], r['unrealized_pct']),
         axis=1
@@ -257,25 +266,7 @@ def build_vesting_grid(user_id: int,
     if df.empty:
         return pd.DataFrame()
 
-    df['stimulus'] = df['reps'].apply(lambda r: classify_stimulus(int(r)))
-    df['actual_reps'] = df.apply(
-        lambda r: compute_actual_reps(int(r['sets']), int(r['reps']),
-                                      int(r['bonus_reps']) if r['bonus_reps'] is not None else 0),
-        axis=1
-    )
-    df['laterality'] = df['exercise_name'].apply(
-        lambda x: exercises.get(x.strip().lower(), {}).get('laterality', 'Bilateral')
-    )
-    df['actual_volume'] = df.apply(
-        lambda r: compute_actual_volume(r['actual_reps'], r['weight'], r['laterality']),
-        axis=1
-    )
-    df['unrealized_pct'] = df.apply(
-        lambda r: compute_unrealized_vesting_pct(
-            r['date'], today, STIMULUS_TABLE[r['stimulus']]['adaptation_days']
-        ),
-        axis=1
-    )
+    df = _enrich_records(df, exercises, today)
 
     if axis_filter == 'adaptation':
         df = df[df['unrealized_pct'] > 0]
@@ -306,25 +297,7 @@ def build_color_matrix(user_id: int,
     if df.empty:
         return {}
 
-    df['stimulus'] = df['reps'].apply(lambda r: classify_stimulus(int(r)))
-    df['actual_reps'] = df.apply(
-        lambda r: compute_actual_reps(int(r['sets']), int(r['reps']),
-                                      int(r['bonus_reps']) if r['bonus_reps'] is not None else 0),
-        axis=1
-    )
-    df['laterality'] = df['exercise_name'].apply(
-        lambda x: exercises.get(x.strip().lower(), {}).get('laterality', 'Bilateral')
-    )
-    df['actual_volume'] = df.apply(
-        lambda r: compute_actual_volume(r['actual_reps'], r['weight'], r['laterality']),
-        axis=1
-    )
-    df['unrealized_pct'] = df.apply(
-        lambda r: compute_unrealized_vesting_pct(
-            r['date'], today, STIMULUS_TABLE[r['stimulus']]['adaptation_days']
-        ),
-        axis=1
-    )
+    df = _enrich_records(df, exercises, today)
 
     color_map = {}
     for (date, exercise), group in df.groupby(['date', 'exercise_name']):
@@ -338,6 +311,78 @@ def build_color_matrix(user_id: int,
         color_map[(date, exercise)] = compute_blended_adaptation(contributions)
 
     return color_map
+
+
+# ── Block Progress ────────────────────────────────────────────────────────────
+
+def build_block_progress(block: dict,
+                         records: list,
+                         exercises: dict) -> dict:
+    segments_progress = []
+
+    for seg in block['segments']:
+        min_week = min(seg['weeks'])
+        max_week = max(seg['weeks'])
+        seg_start = block['start_date'] + datetime.timedelta(
+            days=(min_week - 1) * 7
+        )
+        seg_end = block['start_date'] + datetime.timedelta(
+            days=max_week * 7 - 1
+        )
+
+        seg_records = [
+            r for r in records
+            if seg_start <= r['date'] <= seg_end
+        ]
+
+        progress = {}
+        for cell_key, class_alloc in seg['allocation'].items():
+            progress[cell_key] = {}
+            for cls_name, allocated_slots in class_alloc.items():
+                matching = []
+                for r in seg_records:
+                    ex_key = r['exercise_name'].strip().lower()
+                    ex = exercises.get(ex_key)
+                    if ex is None:
+                        continue
+                    r_cell = (ex['movement_plane'], ex['movement_type'])
+                    if r_cell == cell_key and ex.get('classification') == cls_name:
+                        matching.append(r)
+
+                sessions = len({r['date'] for r in matching})
+                volume = None
+                vol_records = [r for r in matching
+                               if r.get('sets') is not None
+                               and r.get('reps') is not None
+                               and r.get('weight') is not None]
+                if vol_records:
+                    volume = sum(
+                        (r['sets'] * r['reps'] + (r['bonus_reps'] or 0)) * r['weight']
+                        for r in vol_records
+                    )
+
+                progress[cell_key][cls_name] = {
+                    'allocated_slots': allocated_slots,
+                    'sessions_logged': sessions,
+                    'volume_logged': volume,
+                }
+
+        segments_progress.append({
+            'segment_name': seg['name'],
+            'weeks': seg['weeks'],
+            'allocation': seg['allocation'],
+            'progress': progress,
+        })
+
+    return {
+        'block': {
+            'block_id': block['block_id'],
+            'name': block['name'],
+            'start_date': block['start_date'],
+            'end_date': block['end_date'],
+        },
+        'segments': segments_progress,
+    }
 
 
 # ── Leaderboard ───────────────────────────────────────────────────────────────

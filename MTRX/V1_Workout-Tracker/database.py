@@ -277,15 +277,6 @@ class WorkoutDatabase:
         if rpe is not None and not (6.0 <= float(rpe) <= 10.0):
             raise ValueError(f'rpe must be in range [6.0, 10.0], got {rpe}')
 
-        # Bodyweight auto-resolution for non-missing weight case
-        if load_type == 'Bodyweight' and weight is None:
-            resolved_weight = self.get_bodyweight_on_date(user_id, date)
-            if resolved_weight is None:
-                raise ValueError(
-                    'No bodyweight measurement found on or before this date'
-                )
-            weight = resolved_weight
-
         record_id = self.__record_counter
         self.__records.append({
             'record_id': record_id,
@@ -515,7 +506,7 @@ class WorkoutDatabase:
             None
         )
 
-    def get_block_progress(self, user_id: int, block_id: int) -> dict:
+    def get_training_block(self, user_id: int, block_id: int) -> dict:
         if user_id not in self.__users:
             raise KeyError(f'user_id {user_id} not found')
         block = None
@@ -525,73 +516,7 @@ class WorkoutDatabase:
                 break
         if block is None:
             raise KeyError(f'block_id {block_id} not found for user {user_id}')
-
-        exercises = self.get_all_exercises()
-        segments_progress = []
-
-        for seg in block['segments']:
-            min_week = min(seg['weeks'])
-            max_week = max(seg['weeks'])
-            seg_start = block['start_date'] + datetime.timedelta(
-                days=(min_week - 1) * 7
-            )
-            seg_end = block['start_date'] + datetime.timedelta(
-                days=max_week * 7 - 1
-            )
-
-            seg_records = self.get_records(
-                user_id=user_id, date_start=seg_start, date_end=seg_end
-            )
-
-            progress = {}
-            for cell_key, class_alloc in seg['allocation'].items():
-                progress[cell_key] = {}
-                for cls_name, allocated_slots in class_alloc.items():
-                    # Find records matching this cell + classification
-                    matching = []
-                    for r in seg_records:
-                        ex_key = r['exercise_name'].strip().lower()
-                        ex = exercises.get(ex_key)
-                        if ex is None:
-                            continue
-                        r_cell = (ex['movement_plane'], ex['movement_type'])
-                        if r_cell == cell_key and ex.get('classification') == cls_name:
-                            matching.append(r)
-
-                    sessions = len({r['date'] for r in matching})
-                    volume = None
-                    vol_records = [r for r in matching
-                                   if r.get('sets') is not None
-                                   and r.get('reps') is not None
-                                   and r.get('weight') is not None]
-                    if vol_records:
-                        volume = sum(
-                            (r['sets'] * r['reps'] + (r['bonus_reps'] or 0)) * r['weight']
-                            for r in vol_records
-                        )
-
-                    progress[cell_key][cls_name] = {
-                        'allocated_slots': allocated_slots,
-                        'sessions_logged': sessions,
-                        'volume_logged': volume,
-                    }
-
-            segments_progress.append({
-                'segment_name': seg['name'],
-                'weeks': seg['weeks'],
-                'allocation': seg['allocation'],
-                'progress': progress,
-            })
-
-        return {
-            'block': {
-                'block_id': block['block_id'],
-                'name': block['name'],
-                'start_date': block['start_date'],
-                'end_date': block['end_date'],
-            },
-            'segments': segments_progress,
-        }
+        return dict(block)
 
     # ── Serialization ─────────────────────────────────────────────────────────
 
