@@ -30,8 +30,11 @@ MEASUREMENT_UNITS = {
                       'formula': 'sets * reps * weight'},
     'DURATION':      {'fields': ['sets', 'duration_seconds'],
                       'formula': 'sets * duration_seconds'},
-    'DISTANCE':      {'fields': ['distance_meters'],
-                      'formula': 'distance_meters'},
+    'DISTANCE':         {'fields': ['distance_meters'],
+                         'formula': 'distance_meters'},
+    'DISTANCE_DURATION': {'fields': ['distance_meters', 'duration_seconds'],
+                         'optional_fields': ['distance_meters', 'duration_seconds'],
+                         'formula': 'distance_meters | duration_seconds'},
     'LOAD_DISTANCE': {'fields': ['weight', 'distance_meters'],
                       'formula': 'weight * distance_meters'},
     'REPS_ONLY':     {'fields': ['sets', 'reps'],
@@ -70,9 +73,9 @@ CLASSIFICATION_TABLE = {
         {'name': 'Static Brace', 'measurement_unit': 'DURATION'},
     ],
     ('Sagittal', 'Gait/Locomotion'): [
-        {'name': 'Running / Sprinting', 'measurement_unit': 'DISTANCE'},
+        {'name': 'Running / Sprinting', 'measurement_unit': 'DISTANCE_DURATION'},
         {'name': 'Sled Push / Drag',    'measurement_unit': 'LOAD_DISTANCE'},
-        {'name': 'Stair / Incline',     'measurement_unit': 'DISTANCE'},
+        {'name': 'Stair / Incline',     'measurement_unit': 'DISTANCE_DURATION'},
     ],
     ('Sagittal', 'Rotation'): [],
     ('Sagittal', 'Accessory/Isolation'): [
@@ -104,7 +107,7 @@ CLASSIFICATION_TABLE = {
         {'name': 'Side Plank / Lateral Brace', 'measurement_unit': 'DURATION'},
     ],
     ('Frontal', 'Gait/Locomotion'): [
-        {'name': 'Lateral Shuffle / Skater', 'measurement_unit': 'DISTANCE'},
+        {'name': 'Lateral Shuffle / Skater', 'measurement_unit': 'DISTANCE_DURATION'},
         {'name': 'Lateral Sled Drag',        'measurement_unit': 'LOAD_DISTANCE'},
     ],
     ('Frontal', 'Rotation'): [
@@ -138,7 +141,7 @@ CLASSIFICATION_TABLE = {
         {'name': 'Anti-Rotation Hold', 'measurement_unit': 'DURATION'},
     ],
     ('Transverse', 'Gait/Locomotion'): [
-        {'name': 'Agility / Cutting',    'measurement_unit': 'DISTANCE'},
+        {'name': 'Agility / Cutting',    'measurement_unit': 'DISTANCE_DURATION'},
         {'name': 'Rotational Sled Work', 'measurement_unit': 'LOAD_DISTANCE'},
     ],
     ('Transverse', 'Rotation'): [
@@ -158,10 +161,10 @@ CLASSIFICATION_TABLE = {
 MOVEMENT_PLANES = {'Sagittal', 'Frontal', 'Transverse'}
 MOVEMENT_TYPES  = {'Accessory/Isolation', 'Carry/Bracing', 'Gait/Locomotion',
                    'Hinge', 'Pull', 'Push', 'Rotation', 'Squat'}
-WORKOUT_TYPES   = {'Conditioning', 'Weightlifting', 'Mobility', 'Recovery'}
+WORKOUT_TYPES   = {'Conditioning', 'Weightlifting', 'Mobility', 'Recovery', 'Powerlifting'}
 LATERALITY      = {'Bilateral', 'Unilateral'}
 LOAD_TYPES      = {'Band', 'Barbell', 'Bodyweight', 'Cable', 'Curl Bar',
-                   'Dumbbell', 'Kettlebell', 'Machine', 'Medicineball', 'N/A'}
+                   'Dumbbell', 'Kettlebell', 'Machine', 'Medicine Ball', 'N/A'}
 
 MOVEMENT_PLANES_ORDERED = ['Sagittal', 'Frontal', 'Transverse']
 MOVEMENT_TYPES_ORDERED  = ['Accessory/Isolation', 'Carry/Bracing', 'Gait/Locomotion',
