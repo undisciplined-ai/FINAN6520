@@ -112,6 +112,25 @@ EXERCISE_LIBRARY = {
         'classification': 'Downward Press',
     },
 
+    'Shoulder Press': {
+        'workout_type': 'Weightlifting', 'laterality': 'Bilateral',
+        'default_load_type': 'Machine',
+        'movement_plane': 'Sagittal', 'movement_type': 'Push',
+        'classification': 'Upward Press',
+    },
+    'Chest Press': {
+        'workout_type': 'Weightlifting', 'laterality': 'Bilateral',
+        'default_load_type': 'Machine',
+        'movement_plane': 'Sagittal', 'movement_type': 'Push',
+        'classification': 'Horizontal Press',
+    },
+    'Pec Fly': {
+        'workout_type': 'Weightlifting', 'laterality': 'Bilateral',
+        'default_load_type': 'Machine',
+        'movement_plane': 'Sagittal', 'movement_type': 'Push',
+        'classification': 'Horizontal Press',
+    },
+
     # ── Sagittal / Pull ───────────────────────────────────────────────────────
 
     'Pull Ups': {
@@ -161,6 +180,13 @@ EXERCISE_LIBRARY = {
         'default_load_type': 'Cable',
         'movement_plane': 'Sagittal', 'movement_type': 'Pull',
         'classification': 'Horizontal Pull',
+    },
+
+    'Vertical Traction': {
+        'workout_type': 'Weightlifting', 'laterality': 'Bilateral',
+        'default_load_type': 'Machine',
+        'movement_plane': 'Sagittal', 'movement_type': 'Pull',
+        'classification': 'Downward Pull',
     },
 
     # ── Sagittal / Squat ──────────────────────────────────────────────────────
@@ -382,6 +408,18 @@ EXERCISE_LIBRARY = {
     # 'Leg Flexion' is the closest available classification for hip/trunk
     # flexion-pattern movements.
 
+    'Tricep Extension': {
+        'workout_type': 'Weightlifting', 'laterality': 'Bilateral',
+        'default_load_type': 'Machine',
+        'movement_plane': 'Sagittal', 'movement_type': 'Accessory/Isolation',
+        'classification': 'Arm Extension',
+    },
+    'Leg Extension': {
+        'workout_type': 'Weightlifting', 'laterality': 'Bilateral',
+        'default_load_type': 'Machine',
+        'movement_plane': 'Sagittal', 'movement_type': 'Accessory/Isolation',
+        'classification': 'Leg Extension',
+    },
     'Bicep Curl': {
         'workout_type': 'Weightlifting', 'laterality': 'Bilateral',
         'default_load_type': 'Curl Bar',
