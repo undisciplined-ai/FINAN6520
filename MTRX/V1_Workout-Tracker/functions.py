@@ -13,7 +13,6 @@ from constants import (
     MEASUREMENT_UNITS,
     MOVEMENT_PLANES_ORDERED,
     MOVEMENT_TYPES_ORDERED,
-    PROGRAM_START_DATE,
 )
 
 
@@ -313,78 +312,6 @@ def build_color_matrix(user_id: int,
     return color_map
 
 
-# ── Block Progress ────────────────────────────────────────────────────────────
-
-def build_block_progress(block: dict,
-                         records: list,
-                         exercises: dict) -> dict:
-    segments_progress = []
-
-    for seg in block['segments']:
-        min_week = min(seg['weeks'])
-        max_week = max(seg['weeks'])
-        seg_start = block['start_date'] + datetime.timedelta(
-            days=(min_week - 1) * 7
-        )
-        seg_end = block['start_date'] + datetime.timedelta(
-            days=max_week * 7 - 1
-        )
-
-        seg_records = [
-            r for r in records
-            if seg_start <= r['date'] <= seg_end
-        ]
-
-        progress = {}
-        for cell_key, class_alloc in seg['allocation'].items():
-            progress[cell_key] = {}
-            for cls_name, allocated_slots in class_alloc.items():
-                matching = []
-                for r in seg_records:
-                    ex_key = r['exercise_name'].strip().lower()
-                    ex = exercises.get(ex_key)
-                    if ex is None:
-                        continue
-                    r_cell = (ex['movement_plane'], ex['movement_type'])
-                    if r_cell == cell_key and ex.get('classification') == cls_name:
-                        matching.append(r)
-
-                sessions = len({r['date'] for r in matching})
-                volume = None
-                vol_records = [r for r in matching
-                               if r.get('sets') is not None
-                               and r.get('reps') is not None
-                               and r.get('weight') is not None]
-                if vol_records:
-                    volume = sum(
-                        (r['sets'] * r['reps'] + (r['bonus_reps'] or 0)) * r['weight']
-                        for r in vol_records
-                    )
-
-                progress[cell_key][cls_name] = {
-                    'allocated_slots': allocated_slots,
-                    'sessions_logged': sessions,
-                    'volume_logged': volume,
-                }
-
-        segments_progress.append({
-            'segment_name': seg['name'],
-            'weeks': seg['weeks'],
-            'allocation': seg['allocation'],
-            'progress': progress,
-        })
-
-    return {
-        'block': {
-            'block_id': block['block_id'],
-            'name': block['name'],
-            'start_date': block['start_date'],
-            'end_date': block['end_date'],
-        },
-        'segments': segments_progress,
-    }
-
-
 # ── Leaderboard ───────────────────────────────────────────────────────────────
 
 def build_leaderboard(records: list,
@@ -472,15 +399,3 @@ def build_leaderboard(records: list,
         result = result.head(top_n)
 
     return result
-
-
-# ── Program Calendar ──────────────────────────────────────────────────────────
-
-def get_program_week_bounds(target_date: datetime.date) -> tuple:
-    days_offset = (target_date - PROGRAM_START_DATE).days
-    if days_offset < 0:
-        raise ValueError('Date precedes program start.')
-    week_number = days_offset // 7
-    week_start = PROGRAM_START_DATE + datetime.timedelta(days=week_number * 7)
-    week_end = week_start + datetime.timedelta(days=6)
-    return (week_start, week_end)

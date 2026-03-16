@@ -38,231 +38,120 @@ MEASUREMENT_UNITS = {
                       'formula': 'sets * reps'},
 }
 
-# ── Segment Templates ─────────────────────────────────────────────────────────
+# ── Classification Lookup Table ────────────────────────────────────────────────
+# Maps (plane, movement_type) → list of valid classification names with
+# their measurement unit.  This is the single source of truth used by the
+# exercise library to resolve which fields a workout record requires.
 
-SEGMENT_TEMPLATES = {
+CLASSIFICATION_TABLE = {
 
-    'BLANK': {
-        'name': 'Blank (No Weights)',
-        'grid': {
+    # ── Sagittal ──────────────────────────────────────────────────────────────
 
-            # ── Sagittal Plane ────────────────────────────────────────────────
+    ('Sagittal', 'Push'): [
+        {'name': 'Upward Press',     'measurement_unit': 'VOLUME'},
+        {'name': 'Horizontal Press', 'measurement_unit': 'VOLUME'},
+        {'name': 'Downward Press',   'measurement_unit': 'VOLUME'},
+    ],
+    ('Sagittal', 'Pull'): [
+        {'name': 'Upward Pull',     'measurement_unit': 'VOLUME'},
+        {'name': 'Downward Pull',   'measurement_unit': 'VOLUME'},
+        {'name': 'Horizontal Pull', 'measurement_unit': 'VOLUME'},
+    ],
+    ('Sagittal', 'Squat'): [
+        {'name': 'Bilateral Squat',  'measurement_unit': 'VOLUME'},
+        {'name': 'Unilateral Squat', 'measurement_unit': 'VOLUME'},
+    ],
+    ('Sagittal', 'Hinge'): [
+        {'name': 'Bilateral Hinge',  'measurement_unit': 'VOLUME'},
+        {'name': 'Unilateral Hinge', 'measurement_unit': 'VOLUME'},
+    ],
+    ('Sagittal', 'Carry/Bracing'): [
+        {'name': 'Loaded Carry', 'measurement_unit': 'LOAD_DISTANCE'},
+        {'name': 'Static Brace', 'measurement_unit': 'DURATION'},
+    ],
+    ('Sagittal', 'Gait/Locomotion'): [
+        {'name': 'Running / Sprinting', 'measurement_unit': 'DISTANCE'},
+        {'name': 'Sled Push / Drag',    'measurement_unit': 'LOAD_DISTANCE'},
+        {'name': 'Stair / Incline',     'measurement_unit': 'DISTANCE'},
+    ],
+    ('Sagittal', 'Rotation'): [],
+    ('Sagittal', 'Accessory/Isolation'): [
+        {'name': 'Arm Flexion',   'measurement_unit': 'VOLUME'},
+        {'name': 'Arm Extension', 'measurement_unit': 'VOLUME'},
+        {'name': 'Leg Extension', 'measurement_unit': 'VOLUME'},
+        {'name': 'Leg Flexion',   'measurement_unit': 'VOLUME'},
+        {'name': 'Calf / Ankle',  'measurement_unit': 'VOLUME'},
+    ],
 
-            ('Sagittal', 'Push'): {
-                'categories': [
-                    {'name': 'Upward Press',     'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Overhead Press', 'Push Press']},
-                    {'name': 'Horizontal Press', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Bench Press', 'Floor Press']},
-                    {'name': 'Downward Press',   'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Dips', 'Decline Press']},
-                ],
-            },
-            ('Sagittal', 'Pull'): {
-                'categories': [
-                    {'name': 'Upward Pull',     'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Pull-Up', 'Chin-Up']},
-                    {'name': 'Downward Pull',   'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Lat Pulldown', 'Cable Pulldown']},
-                    {'name': 'Horizontal Pull', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Barbell Row', 'Cable Row', 'Chest-Supported Row']},
-                ],
-            },
-            ('Sagittal', 'Squat'): {
-                'categories': [
-                    {'name': 'Bilateral Squat',  'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Back Squat', 'Front Squat', 'Goblet Squat']},
-                    {'name': 'Unilateral Squat', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Lunge', 'Split Squat', 'Step-Up']},
-                ],
-            },
-            ('Sagittal', 'Hinge'): {
-                'categories': [
-                    {'name': 'Bilateral Hinge',  'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Deadlift', 'RDL', 'Good Morning']},
-                    {'name': 'Unilateral Hinge', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Single-Leg RDL', 'Single-Leg Deadlift']},
-                ],
-            },
-            ('Sagittal', 'Carry/Bracing'): {
-                'categories': [
-                    {'name': 'Loaded Carry', 'weight': 0, 'measurement_unit': 'LOAD_DISTANCE',
-                     'exercise_examples': ['Farmer Walk', 'Front Rack Carry']},
-                    {'name': 'Static Brace', 'weight': 0, 'measurement_unit': 'DURATION',
-                     'exercise_examples': ['Plank', 'Dead Bug', 'Pallof Hold']},
-                ],
-            },
-            ('Sagittal', 'Gait/Locomotion'): {
-                'categories': [
-                    {'name': 'Running / Sprinting', 'weight': 0, 'measurement_unit': 'DISTANCE',
-                     'exercise_examples': ['Sprint', 'Tempo Run', 'Jog']},
-                    {'name': 'Sled Push / Drag',    'weight': 0, 'measurement_unit': 'LOAD_DISTANCE',
-                     'exercise_examples': ['Sled Push', 'Sled Drag']},
-                    {'name': 'Stair / Incline',     'weight': 0, 'measurement_unit': 'DISTANCE',
-                     'exercise_examples': ['Stair Climb', 'Hill Run', 'Incline Walk']},
-                ],
-            },
-            ('Sagittal', 'Rotation'): {
-                'categories': [],
-            },
-            ('Sagittal', 'Accessory/Isolation'): {
-                'categories': [
-                    {'name': 'Arm Flexion',   'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Bicep Curl', 'Hammer Curl', 'Preacher Curl']},
-                    {'name': 'Arm Extension', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Tricep Extension', 'Skull Crusher', 'Pushdown']},
-                    {'name': 'Leg Extension', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Leg Extension', 'Sissy Squat']},
-                    {'name': 'Leg Flexion',   'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Leg Curl', 'Nordic Curl', 'Hamstring Curl']},
-                    {'name': 'Calf / Ankle',  'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Calf Raise', 'Tibialis Raise']},
-                ],
-            },
+    # ── Frontal ───────────────────────────────────────────────────────────────
 
-            # ── Frontal Plane ─────────────────────────────────────────────────
+    ('Frontal', 'Push'): [
+        {'name': 'Lateral Raise', 'measurement_unit': 'VOLUME'},
+    ],
+    ('Frontal', 'Pull'): [
+        {'name': 'Upright Row', 'measurement_unit': 'VOLUME'},
+        {'name': 'Face Pull',   'measurement_unit': 'VOLUME'},
+    ],
+    ('Frontal', 'Squat'): [
+        {'name': 'Lateral Squat', 'measurement_unit': 'VOLUME'},
+        {'name': 'Curtsy Lunge',  'measurement_unit': 'VOLUME'},
+    ],
+    ('Frontal', 'Hinge'): [
+        {'name': 'Lateral Hinge', 'measurement_unit': 'VOLUME'},
+    ],
+    ('Frontal', 'Carry/Bracing'): [
+        {'name': 'Suitcase Carry',             'measurement_unit': 'LOAD_DISTANCE'},
+        {'name': 'Side Plank / Lateral Brace', 'measurement_unit': 'DURATION'},
+    ],
+    ('Frontal', 'Gait/Locomotion'): [
+        {'name': 'Lateral Shuffle / Skater', 'measurement_unit': 'DISTANCE'},
+        {'name': 'Lateral Sled Drag',        'measurement_unit': 'LOAD_DISTANCE'},
+    ],
+    ('Frontal', 'Rotation'): [
+        {'name': 'Lateral Flexion', 'measurement_unit': 'VOLUME'},
+    ],
+    ('Frontal', 'Accessory/Isolation'): [
+        {'name': 'Adduction', 'measurement_unit': 'VOLUME'},
+        {'name': 'Abduction', 'measurement_unit': 'VOLUME'},
+        {'name': 'Rear Delt', 'measurement_unit': 'VOLUME'},
+    ],
 
-            ('Frontal', 'Push'): {
-                'categories': [
-                    {'name': 'Lateral Raise',  'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Dumbbell Lateral Raise', 'Cable Lateral Raise']},
-                ],
-            },
-            ('Frontal', 'Pull'): {
-                'categories': [
-                    {'name': 'Upright Row', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Barbell Upright Row', 'Dumbbell Upright Row', 'Cable Upright Row']},
-                    {'name': 'Face Pull',   'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Cable Face Pull', 'Band Face Pull']},
-                ],
-            },
-            ('Frontal', 'Squat'): {
-                'categories': [
-                    {'name': 'Lateral Squat', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Cossack Squat', 'Lateral Lunge']},
-                    {'name': 'Curtsy Lunge',  'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Curtsy Lunge', 'Crossover Lunge']},
-                ],
-            },
-            ('Frontal', 'Hinge'): {
-                'categories': [
-                    {'name': 'Lateral Hinge', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Side-Bending Deadlift', 'Lateral RDL']},
-                ],
-            },
-            ('Frontal', 'Carry/Bracing'): {
-                'categories': [
-                    {'name': 'Suitcase Carry',              'weight': 0, 'measurement_unit': 'LOAD_DISTANCE',
-                     'exercise_examples': ['Single-Arm Suitcase Carry', 'Offset Farmer Walk']},
-                    {'name': 'Side Plank / Lateral Brace',  'weight': 0, 'measurement_unit': 'DURATION',
-                     'exercise_examples': ['Side Plank', 'Side-Lying Hip Abduction Hold']},
-                ],
-            },
-            ('Frontal', 'Gait/Locomotion'): {
-                'categories': [
-                    {'name': 'Lateral Shuffle / Skater', 'weight': 0, 'measurement_unit': 'DISTANCE',
-                     'exercise_examples': ['Lateral Shuffle', 'Skater Hop']},
-                    {'name': 'Lateral Sled Drag',        'weight': 0, 'measurement_unit': 'LOAD_DISTANCE',
-                     'exercise_examples': ['Lateral Sled Drag', 'Band-Resisted Lateral Walk']},
-                ],
-            },
-            ('Frontal', 'Rotation'): {
-                'categories': [
-                    {'name': 'Lateral Flexion', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Side Bend', 'Windmill', 'Cable Side Bend']},
-                ],
-            },
-            ('Frontal', 'Accessory/Isolation'): {
-                'categories': [
-                    {'name': 'Adduction', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Adductor Machine', 'Copenhagen Plank']},
-                    {'name': 'Abduction', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Abductor Machine', 'Banded Walk']},
-                    {'name': 'Rear Delt', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Reverse Fly', 'Band Pull-Apart']},
-                ],
-            },
+    # ── Transverse ────────────────────────────────────────────────────────────
 
-            # ── Transverse Plane ──────────────────────────────────────────────
-
-            ('Transverse', 'Push'): {
-                'categories': [
-                    {'name': 'Rotational Press',        'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Single-Arm Cable Press with Rotation']},
-                    {'name': 'Landmine Rotation Press', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Landmine Rotation Press']},
-                ],
-            },
-            ('Transverse', 'Pull'): {
-                'categories': [
-                    {'name': 'Rotational Row', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Single-Arm Cable Row with Rotation']},
-                    {'name': 'Woodchop Pull',  'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['High-to-Low Cable Woodchop']},
-                ],
-            },
-            ('Transverse', 'Squat'): {
-                'categories': [
-                    {'name': 'Rotational Lunge', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Lunge with Trunk Rotation', 'Rotational Step-Up']},
-                    {'name': 'Pivot Squat',      'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Pivot Squat', 'Rotational Squat']},
-                ],
-            },
-            ('Transverse', 'Hinge'): {
-                'categories': [
-                    {'name': 'Rotational Hinge', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Single-Arm Dumbbell Snatch', 'Rotational Clean']},
-                ],
-            },
-            ('Transverse', 'Carry/Bracing'): {
-                'categories': [
-                    {'name': 'Offset Carry',       'weight': 0, 'measurement_unit': 'LOAD_DISTANCE',
-                     'exercise_examples': ['Asymmetric Load Carry', 'Single-Arm Overhead Carry']},
-                    {'name': 'Anti-Rotation Hold', 'weight': 0, 'measurement_unit': 'DURATION',
-                     'exercise_examples': ['Pallof Press Iso', 'Bird Dog Hold']},
-                ],
-            },
-            ('Transverse', 'Gait/Locomotion'): {
-                'categories': [
-                    {'name': 'Agility / Cutting',    'weight': 0, 'measurement_unit': 'DISTANCE',
-                     'exercise_examples': ['Cone Drill', 'Shuttle Run', 'T-Drill']},
-                    {'name': 'Rotational Sled Work', 'weight': 0, 'measurement_unit': 'LOAD_DISTANCE',
-                     'exercise_examples': ['Rotational Sled Push', 'Lateral Sled Rotation']},
-                ],
-            },
-            ('Transverse', 'Rotation'): {
-                'categories': [
-                    {'name': 'Anti-Rotation',     'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Pallof Press', 'Cable Chop']},
-                    {'name': 'Rotational Power',  'weight': 0, 'measurement_unit': 'REPS_ONLY',
-                     'exercise_examples': ['Med Ball Throw', 'Russian Twist']},
-                    {'name': 'Thoracic Rotation', 'weight': 0, 'measurement_unit': 'REPS_ONLY',
-                     'exercise_examples': ['Open Book', 'Seated Rotation']},
-                ],
-            },
-            ('Transverse', 'Accessory/Isolation'): {
-                'categories': [
-                    {'name': 'Oblique Isolation', 'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Cable Twist', 'Woodchop']},
-                    {'name': 'Rotator Cuff',      'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Internal Rotation', 'External Rotation']},
-                    {'name': 'Forearm Rotation',  'weight': 0, 'measurement_unit': 'VOLUME',
-                     'exercise_examples': ['Pronation', 'Supination']},
-                ],
-            },
-        },
-    },
-
-    # Named preset stubs — V2
-    'GPP':          {'name': 'General Physical Preparedness', 'grid': {}},
-    'STRENGTH':     {'name': 'Strength',                      'grid': {}},
-    'HYPERTROPHY':  {'name': 'Hypertrophy',                   'grid': {}},
-    'POWERLIFTING': {'name': 'Powerlifting',                  'grid': {}},
-    'FUNCTIONAL':   {'name': 'Functional Fitness',            'grid': {}},
+    ('Transverse', 'Push'): [
+        {'name': 'Rotational Press',        'measurement_unit': 'VOLUME'},
+        {'name': 'Landmine Rotation Press', 'measurement_unit': 'VOLUME'},
+    ],
+    ('Transverse', 'Pull'): [
+        {'name': 'Rotational Row', 'measurement_unit': 'VOLUME'},
+        {'name': 'Woodchop Pull',  'measurement_unit': 'VOLUME'},
+    ],
+    ('Transverse', 'Squat'): [
+        {'name': 'Rotational Lunge', 'measurement_unit': 'VOLUME'},
+        {'name': 'Pivot Squat',      'measurement_unit': 'VOLUME'},
+    ],
+    ('Transverse', 'Hinge'): [
+        {'name': 'Rotational Hinge', 'measurement_unit': 'VOLUME'},
+    ],
+    ('Transverse', 'Carry/Bracing'): [
+        {'name': 'Offset Carry',       'measurement_unit': 'LOAD_DISTANCE'},
+        {'name': 'Anti-Rotation Hold', 'measurement_unit': 'DURATION'},
+    ],
+    ('Transverse', 'Gait/Locomotion'): [
+        {'name': 'Agility / Cutting',    'measurement_unit': 'DISTANCE'},
+        {'name': 'Rotational Sled Work', 'measurement_unit': 'LOAD_DISTANCE'},
+    ],
+    ('Transverse', 'Rotation'): [
+        {'name': 'Anti-Rotation',     'measurement_unit': 'VOLUME'},
+        {'name': 'Rotational Power',  'measurement_unit': 'REPS_ONLY'},
+        {'name': 'Thoracic Rotation', 'measurement_unit': 'REPS_ONLY'},
+    ],
+    ('Transverse', 'Accessory/Isolation'): [
+        {'name': 'Oblique Isolation', 'measurement_unit': 'VOLUME'},
+        {'name': 'Rotator Cuff',      'measurement_unit': 'VOLUME'},
+        {'name': 'Forearm Rotation',  'measurement_unit': 'VOLUME'},
+    ],
 }
-
-DEFAULT_PRESET = 'BLANK'
 
 # ── Controlled Vocabulary Sets ────────────────────────────────────────────────
 

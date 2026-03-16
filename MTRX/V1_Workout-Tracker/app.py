@@ -12,7 +12,6 @@ import pandas as pd
 
 from database import WorkoutDatabase
 from functions import (
-    build_block_progress,
     build_color_matrix,
     build_leaderboard,
     build_summary_matrix,
@@ -20,7 +19,6 @@ from functions import (
     build_weight_guidance,
     compute_ddm,
     compute_weight_suggestions,
-    get_program_week_bounds,
 )
 
 
@@ -35,15 +33,13 @@ class WorkoutApp:
     # ── Users ─────────────────────────────────────────────────────────────────
 
     def register_user(self, username: str, display_name: str, email: str,
-                      age: int = None, training_experience: int = None,
-                      preset_key: str = None) -> dict:
+                      age: int = None, training_experience: int = None) -> dict:
         user_id = self.__db.add_user(
             username=username,
             display_name=display_name,
             email=email,
             age=age,
             training_experience=training_experience,
-            preset_key=preset_key,
         )
         return {'user_id': user_id, **self.__db.get_user(user_id)}
 
@@ -167,33 +163,6 @@ class WorkoutApp:
             exercises=exercises,
             today=today,
         )
-
-    # ── Training Blocks ───────────────────────────────────────────────────────
-
-    def add_training_block(self, user_id: int, name: str,
-                           start_date: datetime.date,
-                           segments: list) -> dict:
-        block_id = self.__db.add_training_block(
-            user_id=user_id,
-            name=name,
-            start_date=start_date,
-            segments=segments,
-        )
-        return self.__db.get_active_block(user_id, as_of=start_date)
-
-    def get_active_block(self, user_id: int,
-                         as_of: datetime.date = None) -> dict | None:
-        return self.__db.get_active_block(user_id, as_of=as_of)
-
-    def get_active_segment(self, user_id: int, block_id: int,
-                           as_of: datetime.date = None) -> dict | None:
-        return self.__db.get_active_segment(user_id, block_id, as_of=as_of)
-
-    def get_block_progress(self, user_id: int, block_id: int) -> dict:
-        block = self.__db.get_training_block(user_id, block_id)
-        records = self.__db.get_records(user_id=user_id)
-        exercises = self.__db.get_all_exercises()
-        return build_block_progress(block, records, exercises)
 
     # ── Leaderboard ───────────────────────────────────────────────────────────
 
